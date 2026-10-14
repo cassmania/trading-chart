@@ -28,6 +28,7 @@
   </div>
   <button id="indBtn" title="지표 추가">ƒx 지표</button>
   <button id="autoBtn" class="on" title="클릭 지점 자동 추세/지지·저항선">자동선</button>
+  <button id="helpBtn" title="추세선 의미 설명">?</button>
   <button id="themeBtn" title="라이트/다크 전환">🌙</button>
   <select id="stratSel" title="전략">
     <option value="">전략 선택</option>
@@ -54,6 +55,20 @@
   </aside>
   <section id="center">
     <div id="chart"></div>
+    <div id="helpModal" class="hidden">
+      <div class="help-card">
+        <div class="help-head"><b>추세선·지지/저항선 읽기</b><button id="helpClose">✕</button></div>
+        <table class="help-table">
+          <tr><th>선</th><th>색</th><th>의미</th><th>매매 신호</th></tr>
+          <tr><td>상승 추세선</td><td><span class="cdot" style="background:#089981"></span>녹색</td><td>저점들을 이은 선. 오르면 받쳐주는 <b>지지선</b> 역할</td><td>선 아래로 깨지면 <b>매도·손절</b>, 선에 닿으면 <b>반등 매수 후보</b></td></tr>
+          <tr><td>하락 추세선</td><td><span class="cdot" style="background:#fff"></span>흰색</td><td>고점들을 이은 선. 오르면 막히는 <b>저항선</b> 역할</td><td>선 위로 뚫으면 <b>매수</b>, 선에 닿으면 <b>조정 매도 후보</b></td></tr>
+          <tr><td>S1~S3</td><td><span class="cdot" style="background:#f23645"></span>빨강 실선</td><td>과거에 여러 번 받쳐준 가격대(터치 횟수 표시)</td><td>밑으로 깨지면 다음 S선까지 하락 가능</td></tr>
+          <tr><td>R1~R3</td><td><span class="cdot" style="background:#2962ff"></span>파랑 실선</td><td>과거에 여러 번 막힌 가격대</td><td>위로 뚫으면 다음 R선까지 상승 가능</td></tr>
+          <tr><td>▲ 매수 / ▼ 매도</td><td><span class="cdot" style="background:#f23645"></span>빨강 / <span class="cdot" style="background:#2962ff"></span>파랑</td><td>슈퍼트렌드 방향 반전 지점</td><td>참고용. 단독 진입 근거로 쓰지 말 것</td></tr>
+        </table>
+        <p class="help-foot">선은 클릭 지점 기준 최근 120봉 스윙 고·저점으로 자동 계산됩니다. 눈금 오른쪽 끝 값으로 현재가를 확인하세요.</p>
+      </div>
+    </div>
     <div id="panes"></div>
     <div id="chips"></div>
     <footer id="status"><span id="stSrc">연결 중…</span><span id="stTime"></span><span id="stMsg">십자선을 움직이면 OHLC가 표시됩니다</span></footer>

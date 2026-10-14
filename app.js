@@ -888,6 +888,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('themeBtn').onclick = () => { light = !light; applyTheme(); if (autoMode) drawAuto(); };
   const fb = $('favBtn');
   if (fb) fb.onclick = toggleFav;
+  const hb = $('helpBtn'), hm = $('helpModal'), hc = $('helpClose');
+  if (hb && hm) hb.onclick = () => hm.classList.remove('hidden');
+  if (hc && hm) hc.onclick = () => hm.classList.add('hidden');
+  if (hm) hm.onclick = e => { if (e.target === hm) hm.classList.add('hidden'); };
   const ab = $('autoBtn');
   if (ab) ab.onclick = () => {
     autoMode = !autoMode;
