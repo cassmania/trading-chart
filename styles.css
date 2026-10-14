@@ -17,6 +17,12 @@ body{background:var(--bg); color:var(--txt); font-family:"Segoe UI","맑은 고�
 #symInput{background:var(--bg); color:var(--txt); border:1px solid var(--line); border-right:none; border-radius:6px 0 0 6px; padding:6px 10px; width:150px; text-transform:uppercase}
 #symInput:focus{outline:1px solid var(--accent)}
 #symGo{background:var(--accent); color:#fff; border:none; border-radius:0 6px 6px 0; padding:6px 14px; cursor:pointer; font-weight:700}
+#favBtn{background:var(--panel2); color:var(--dim); border:1px solid var(--line); border-radius:6px; padding:6px 10px; margin-left:6px; cursor:pointer; font-size:14px}
+#favBtn.on{color:#ffcf40; border-color:#ffcf40}
+.wlsec{font-size:11px; color:var(--dim); margin:10px 0 4px}
+.wlrow.fav{grid-template-columns:1fr auto auto}
+.wlrow .x{background:none; border:none; color:var(--dim); cursor:pointer; font-size:12px; grid-column:3; grid-row:1/3; align-self:center; padding:0 2px}
+.wlrow .x:hover{color:var(--down)}
 #symGo:hover{filter:brightness(1.15)}
 .ohlc{display:flex; gap:8px; align-items:baseline; white-space:nowrap; overflow:hidden; font-variant-numeric:tabular-nums}
 .ohlc .sym{font-weight:800; font-size:14px}

@@ -4,6 +4,33 @@ const $ = id => document.getElementById(id);
 const WATCH = ['BTC', 'ETH', 'XRP', 'SOL', 'ONDO', 'AAPL', '005930.KS'];
 let symbol = 'BTC', tf = 'D', currency = 'USDT';
 let srcKind = 'demo', srcQuote = '';
+let favs = [];
+try { favs = JSON.parse(localStorage.getItem('tvchart-fav') || '[]'); if (!Array.isArray(favs)) favs = []; } catch (e) { favs = []; }
+function saveFavs() { try { localStorage.setItem('tvchart-fav', JSON.stringify(favs)); } catch (e) {} }
+function isFav(s) { return favs.includes(s.toUpperCase()); }
+function updateFavBtn() {
+  const b = document.getElementById('favBtn');
+  if (!b) return;
+  const on = isFav(symbol);
+  b.textContent = on ? '★' : '☆';
+  b.classList.toggle('on', on);
+}
+function toggleFav() {
+  const s = symbol.toUpperCase();
+  if (isFav(s)) {
+    favs = favs.filter(x => x !== s);
+    saveFavs(); updateFavBtn(); refreshWatch();
+    $('stMsg').textContent = s + ' 즐겨찾기 해제';
+  } else {
+    if (srcKind === 'demo') {
+      $('stMsg').textContent = '실시간 조회된 종목만 즐겨찾기 등록 가능 (지금은 데모 데이터)';
+      return;
+    }
+    favs.push(s);
+    saveFavs(); updateFavBtn(); refreshWatch();
+    $('stMsg').textContent = s + ' 즐겨찾기 등록';
+  }
+}
 let daily = [];           // [{time:'YYYY-MM-DD',open,high,low,close,volume}]
 let chart, candle, vol, ma20, ma50;
 
@@ -146,6 +173,7 @@ function render() {
   chart.applyOptions({ timeScale: { timeVisible: isIntra() } });
   chart.timeScale().fitContent();
   $('stTime').textContent = '봉 ' + data.length + '개 · ' + fmtT(data[0].time) + ' ~ ' + fmtT(last.time) + ' · Vol ' + fmtV(last.volume);
+  updateFavBtn();
   reapplyAll();
 }
 async function loadSymbol(sym) {
@@ -282,22 +310,41 @@ async function lastClose(s) {
 async function refreshWatch() {
   const box = $('wl');
   box.innerHTML = '';
-  for (const s of WATCH) {
+  const drawRow = async (s, isFavRow) => {
     let last = NaN, prev = NaN, live = false;
     try { [last, prev, live] = await lastClose(s); }
     catch (e) { const d = genDemo(s); last = d[d.length - 1].close; prev = d[d.length - 2].close; }
     const ch = prev ? (last - prev) / prev * 100 : 0;
     const row = document.createElement('div');
-    row.className = 'wlrow' + (s === symbol ? ' on' : '');
+    row.className = 'wlrow' + (s === symbol ? ' on' : '') + (isFavRow ? ' fav' : '');
     row.dataset.s = s;
     row.innerHTML = '<span class="s"></span><span class="p"></span><span class="c"></span><span class="r"></span>';
-    row.children[0].textContent = s;
+    row.children[0].textContent = (isFavRow ? '★ ' : '') + s;
     row.children[1].textContent = fmtPx(last);
     row.children[2].textContent = live ? '실시간' : '데모';
     row.children[3].textContent = (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%';
     row.children[3].className = 'r ' + (ch >= 0 ? 'up' : 'down');
+    if (isFavRow) {
+      const x = document.createElement('button');
+      x.className = 'x'; x.textContent = '✕'; x.title = '즐겨찾기 해제';
+      x.onclick = ev => { ev.stopPropagation(); favs = favs.filter(f => f !== s); saveFavs(); updateFavBtn(); refreshWatch(); };
+      row.appendChild(x);
+    }
     row.onclick = () => loadSymbol(s);
     box.appendChild(row);
+  };
+  if (favs.length) {
+    const h = document.createElement('div');
+    h.className = 'wlsec'; h.textContent = '★ 즐겨찾기';
+    box.appendChild(h);
+    for (const s of favs) await drawRow(s, true);
+    const h2 = document.createElement('div');
+    h2.className = 'wlsec'; h2.textContent = '기본 목록';
+    box.appendChild(h2);
+  }
+  for (const s of WATCH) {
+    if (favs.includes(s)) continue;
+    await drawRow(s, false);
   }
 }
 function init() {
@@ -806,6 +853,8 @@ function buildIndPanel() {
 document.addEventListener('DOMContentLoaded', init);
 document.addEventListener('DOMContentLoaded', () => {
   $('themeBtn').onclick = () => { light = !light; applyTheme(); };
+  const fb = $('favBtn');
+  if (fb) fb.onclick = toggleFav;
   const ab = $('autoBtn');
   if (ab) ab.onclick = () => {
     autoMode = !autoMode;
