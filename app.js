@@ -129,7 +129,7 @@ function setChg(last, prev) {
   el.className = d >= 0 ? 'up' : 'down';
 }
 function render() {
-  const data = srcKind === 'upbit' ? daily : resample(daily, tf);
+  const data = NATIVE.includes(srcKind) ? daily : resample(daily, tf);
   document.querySelector('.ohlc .sym').textContent = marketLabel();
   candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
   vol.setData(data.map(b => ({
@@ -153,35 +153,78 @@ async function loadSymbol(sym) {
   $('symInput').value = symbol;
   $('stSrc').textContent = symbol + ' 로딩 중…';
   document.querySelectorAll('.wlrow').forEach(e => e.classList.toggle('on', e.dataset.s === symbol));
-  if (isIntra()) {
-      try {
-        const u = await tryUpbitIntra(symbol, INTRA[tf]);
+  const plan = cryptoPlan(symbol);
+  const base = cryptoBase(symbol);
+  let done = false;
+  for (const step of plan) {
+    if (isIntra() && step === 'stooq') continue;
+    try {
+      if (step === 'binance') {
+        const r = await tryBinance(base, tf);
+        daily = r.data; srcKind = 'binance'; srcQuote = r.market;
+        $('stSrc').textContent = '실시간 데이터: 바이낸스 ' + r.market + ' (' + tfName() + ')';
+      } else if (step === 'mexc') {
+        const r = await tryMexc(base, tf);
+        daily = r.data; srcKind = 'mexc'; srcQuote = r.market;
+        $('stSrc').textContent = '실시간 데이터: MEXC ' + r.market + ' (' + tfName() + ')';
+      } else if (step === 'upbit') {
+        const u = isIntra() ? await tryUpbitIntra(symbol, INTRA[tf]) : await tryUpbit(symbol, tf);
         daily = u.data; srcKind = 'upbit'; srcQuote = u.market;
         $('stSrc').textContent = '실시간 데이터: 업비트 ' + u.market + ' (' + tfName() + ')';
-      } catch (e1) {
-        $('stSrc').textContent = '분봉은 코인(업비트)만 지원 — ' + symbol + ' 불가';
-        return;
+      } else {
+        daily = await fetchStooq(symbol);
+        srcKind = 'stooq'; srcQuote = '';
+        $('stSrc').textContent = '실시간 데이터: stooq.com (일봉)';
       }
-    } else {
-      try {
-        const u = await tryUpbit(symbol, tf);
-        daily = u.data; srcKind = 'upbit'; srcQuote = u.market;
-        $('stSrc').textContent = '실시간 데이터: 업비트 ' + u.market + ' (' + tfName() + ')';
-      } catch (e1) {
-        try {
-          daily = await fetchStooq(symbol);
-          srcKind = 'stooq'; srcQuote = '';
-          $('stSrc').textContent = '실시간 데이터: stooq.com (일봉)';
-        } catch (e2) {
-          daily = genDemo(symbol);
-          srcKind = 'demo'; srcQuote = '';
-          $('stSrc').textContent = '오프라인 데모 데이터 (시세 서버 접근 실패)';
-        }
-      }
+      done = true;
+      break;
+    } catch (e) { /* 다음 소스 시도 */ }
+  }
+  if (!done) {
+    if (isIntra()) {
+      $('stSrc').textContent = '분봉은 코인만 지원 — ' + symbol + ' 불가';
+      return;
     }
+    daily = genDemo(symbol);
+    srcKind = 'demo'; srcQuote = '';
+    $('stSrc').textContent = '오프라인 데모 데이터 (시세 서버 접근 실패)';
+  }
   render();
 }
 const INTRA = { m1: 1, m5: 5, m15: 15 };
+const BINV = { D: '1d', W: '1w', M: '1M', m1: '1m', m5: '5m', m15: '15m' };
+const NATIVE = ['binance', 'mexc', 'upbit'];
+function cryptoBase(sym) {
+  const u = sym.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (u.endsWith('KRW')) return u.slice(0, -3);
+  if (u.endsWith('USDT')) return u.slice(0, -4);
+  return u;
+}
+function cryptoPlan(sym) {
+  const u = sym.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (u.endsWith('KRW')) return ['upbit', 'stooq'];
+  if (u.endsWith('USDT')) return ['binance', 'mexc', 'upbit', 'stooq'];
+  if (currency === 'KRW') return ['upbit', 'stooq'];
+  return ['binance', 'mexc', 'upbit', 'stooq'];
+}
+async function fetchKlines(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('klines ' + r.status);
+  const j = await r.json();
+  if (!Array.isArray(j) || j.length < 10) throw new Error('klines empty');
+  return j.map(k => ({
+    time: Math.floor(k[0] / 1000),
+    open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5]
+  })).sort((a, b) => a.time - b.time);
+}
+async function tryBinance(base, tf) {
+  const data = await fetchKlines('https://api.binance.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200');
+  return { market: base + '/USDT', exch: '바이낸스', data };
+}
+async function tryMexc(base, tf) {
+  const data = await fetchKlines('https://api.mexc.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200');
+  return { market: base + '/USDT', exch: 'MEXC', data };
+}
 const isIntra = () => !!INTRA[tf];
 async function tryUpbitIntra(sym, unit) {
   const market = upbitMarket(sym);
@@ -207,6 +250,7 @@ function fmtT(t) {
   return t;
 }
 function marketLabel() {
+  if (srcKind === 'binance' || srcKind === 'mexc') return srcQuote;
   if (srcKind !== 'upbit') return symbol;
   const m = srcQuote.split('-');
   return m[1] + '/' + m[0];
@@ -220,13 +264,20 @@ function fmtPx(v) {
   return v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 }
 async function lastClose(s) {
-  try {
-    const u = await tryUpbit(s, 'D');
-    const d = u.data;
-    return [d[d.length - 1].close, d[d.length - 2].close, true];
-  } catch (e) { /* fall through */ }
-  const d = await fetchStooq(s);
-  return [d[d.length - 1].close, d[d.length - 2].close, true];
+  const plan = cryptoPlan(s);
+  const base = cryptoBase(s);
+  for (const step of plan) {
+    try {
+      let d;
+      if (step === 'binance') d = (await tryBinance(base, 'D')).data;
+      else if (step === 'mexc') d = (await tryMexc(base, 'D')).data;
+      else if (step === 'upbit') d = (await tryUpbit(s, 'D')).data;
+      else d = await fetchStooq(s);
+      return [d[d.length - 1].close, d[d.length - 2].close, true];
+    } catch (e) { /* 다음 소스 시도 */ }
+  }
+  const d = genDemo(s);
+  return [d[d.length - 1].close, d[d.length - 2].close, false];
 }
 async function refreshWatch() {
   const box = $('wl');
@@ -265,7 +316,7 @@ function init() {
   ma50 = chart.addLineSeries({ color: '#9c27b0', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
   chart.subscribeCrosshairMove(p => {
     if (!p.time || !daily.length) return;
-    const data = srcKind === 'upbit' ? daily : resample(daily, tf);
+    const data = NATIVE.includes(srcKind) ? daily : resample(daily, tf);
     const bar = data.find(b => b.time === p.time) || data.reduce((a, b) => b.time <= p.time ? b : a, data[0]);
     if (bar) { setHead(bar); const i = data.indexOf(bar); if (i > 0) setChg(bar.close, data[i - 1].close); }
   });
@@ -389,7 +440,7 @@ function drawAuto(anchorTime) {
     const f = data.findIndex(b => b.time === anchorTime);
     if (f >= 0) idx = f;
   }
-  const weekends = srcKind === 'upbit';
+  const weekends = NATIVE.includes(srcKind);
   const al = autoLevels(data, idx, weekends, stepSec(data));
   if (al.supLine.length > 1) {
     const s = chart.addLineSeries({ color: BULL, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
@@ -408,7 +459,7 @@ function drawAuto(anchorTime) {
   $('stMsg').textContent = '자동선: 추세 ' + autoLayer.series.length + '개 · 지지 ' + al.supports.length + ' · 저항 ' + al.resistances.length;
 }
 
-const curData = () => srcKind === 'upbit' ? daily : resample(daily, tf);
+const curData = () => NATIVE.includes(srcKind) ? daily : resample(daily, tf);
 const pts = (data, arr) => arr.map((v, i) => ({ time: data[i].time, value: v }))
   .filter(p => p.value !== null && p.value !== undefined && isFinite(p.value));
 const LC = { orange: '#ff9800', purple: '#9c27b0', blue: '#2962ff', cyan: '#00bcd4', green: '#089981', red: '#f23645', yellow: '#ffeb3b', gray: '#868993' };
