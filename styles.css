@@ -69,6 +69,9 @@ body.light #autoleg{background:rgba(255,255,255,.9)}
 #indBtn:hover,#stratGo:hover{border-color:var(--accent); color:#fff}
 #autoBtn{background:var(--panel2); color:var(--dim); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; font-weight:700; white-space:nowrap}
 #autoBtn.on{background:var(--accent); color:#fff; border-color:var(--accent)}
+#liveDot{color:#3a3f4d; font-size:13px}
+#liveDot.on{color:#4ade80; animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 #helpBtn{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; font-weight:700}
 #helpBtn:hover{border-color:var(--accent)}
 #helpModal{position:absolute; inset:0; background:rgba(0,0,0,.55); z-index:20; display:flex; align-items:center; justify-content:center}

@@ -175,6 +175,7 @@ function render() {
   $('stTime').textContent = '봉 ' + data.length + '개 · ' + fmtT(data[0].time) + ' ~ ' + fmtT(last.time) + ' · Vol ' + fmtV(last.volume);
   updateFavBtn();
   reapplyAll();
+  startLive();
 }
 async function loadSymbol(sym) {
   symbol = sym.toUpperCase();
@@ -906,3 +907,114 @@ document.addEventListener('DOMContentLoaded', () => {
     runStrategy(v);
   };
 });
+
+/* ================= 실시간 틱 ================= */
+let liveWS = null, liveTimer = null, livePrevClose = null;
+function setLiveDot(on) {
+  const d = document.getElementById('liveDot');
+  if (d) d.classList.toggle('on', !!on);
+}
+function stopLive() {
+  if (liveWS) { try { liveWS.close(); } catch (e) {} liveWS = null; }
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  setLiveDot(false);
+}
+function parseMiniTicker(m) {
+  return { price: +m.c, open: +m.o, high: +m.h, low: +m.l, vol: +m.v };
+}
+function applyTickToBars(bars, tick, barTime) {
+  const last = bars[bars.length - 1];
+  if (barTime !== last.time) {
+    const nb = { time: barTime, open: tick.price, high: tick.price, low: tick.price, close: tick.price, volume: tick.vol || 0 };
+    return { bars: bars.concat([nb]), bar: nb, rolled: true };
+  }
+  last.close = tick.price;
+  if (tick.high > last.high) last.high = tick.high;
+  if (tick.low < last.low) last.low = tick.low;
+  return { bars, bar: last, rolled: false };
+}
+function paintTick(price) {
+  if (livePrevClose === null || !isFinite(price)) return;
+  const b = daily[daily.length - 1];
+  setHead({ open: b.open, high: Math.max(b.high, price), low: Math.min(b.low, price), close: price });
+  setChg(price, livePrevClose);
+  try { document.title = fmtPx(price) + ' · ' + marketLabel() + ' — 트레이딩 챠트'; } catch (e) {}
+}
+function pushTickToChart(bar) {
+  try {
+    candle.update({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+    vol.update({ time: bar.time, value: bar.volume, color: bar.close >= bar.open ? 'rgba(242,54,69,.55)' : 'rgba(41,98,255,.55)' });
+  } catch (e) {}
+}
+function currentBarTime() {
+  if (!daily.length) return null;
+  if (typeof daily[0].time === 'number') return 'MINUTE';
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+function startLive() {
+  stopLive();
+  if (!daily.length || srcKind === 'demo' || srcKind === 'stooq') { setLiveDot(false); return; }
+  const base = cryptoBase(symbol);
+  livePrevClose = daily.length > 1 ? daily[daily.length - 2].close : daily[daily.length - 1].close;
+  const isUSDT = srcKind === 'binance' || srcKind === 'mexc' || (srcKind === 'upbit' && srcQuote.startsWith('USDT'));
+  if (isUSDT && typeof WebSocket !== 'undefined') {
+    try {
+      const ws = new WebSocket('wss://stream.binance.com:9443/ws/' + base.toLowerCase() + 'usdt@miniTicker');
+      liveWS = ws;
+      ws.onopen = () => setLiveDot(true);
+      ws.onclose = () => { if (liveWS === ws) { setLiveDot(false); startLivePoll(); } };
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+      ws.onmessage = ev => {
+        try {
+          const t = parseMiniTicker(JSON.parse(ev.data));
+          if (!isFinite(t.price) || t.price <= 0) return;
+          onLiveTick(t);
+        } catch (e) {}
+      };
+      return;
+    } catch (e) {}
+  }
+  startLivePoll();
+}
+function startLivePoll() {
+  if (liveTimer) return;
+  setLiveDot(true);
+  const poll = async () => {
+    try {
+      let t = null;
+      if (srcKind === 'upbit' && srcQuote) {
+        const r = await fetch('https://api.upbit.com/v1/ticker?markets=' + srcQuote);
+        const j = await r.json();
+        if (j && j[0]) t = { price: j[0].trade_price, open: j[0].opening_price, high: j[0].high_price, low: j[0].low_price, vol: 0 };
+      } else {
+        const base = cryptoBase(symbol);
+        const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + base + 'USDT');
+        const j = await r.json();
+        if (j && j.lastPrice) t = { price: +j.lastPrice, open: +j.openPrice, high: +j.highPrice, low: +j.lowPrice, vol: 0 };
+      }
+      if (t && isFinite(t.price) && t.price > 0) onLiveTick(t);
+    } catch (e) {}
+  };
+  poll();
+  liveTimer = setInterval(poll, 5000);
+}
+function onLiveTick(t) {
+  if (!daily.length) return;
+  const bt = currentBarTime();
+  if (bt === null) return;
+  if (bt === 'MINUTE') {
+    const bar = daily[daily.length - 1];
+    bar.close = t.price;
+    if (t.high > bar.high) bar.high = t.high;
+    if (t.low < bar.low) bar.low = t.low;
+    pushTickToChart(bar);
+    paintTick(t.price);
+    return;
+  }
+  const r = applyTickToBars(daily, t, bt);
+  daily = r.bars;
+  pushTickToChart(r.bar);
+  paintTick(t.price);
+}
