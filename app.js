@@ -463,6 +463,7 @@ const active = new Map();       // id -> {series:[{c,s}], panes:[paneId], lines:
 const markerLayers = {};        // layerId -> markers[]
 let subCharts = [];             // {id, chart, box, handlers}
 let curStrategy = null, syncing = false;
+let autoStrat = 'supertrend';
 let autoMode = true;
 const autoLayer = { series: [], lines: [] };
 
@@ -490,18 +491,18 @@ function drawAuto(anchorTime) {
   const weekends = NATIVE.includes(srcKind);
   const al = autoLevels(data, idx, weekends, stepSec(data));
   if (al.supLine.length > 1) {
-    const s = chart.addLineSeries({ color: BULL, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    const s = chart.addLineSeries({ color: BULL, lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
     s.setData(al.supLine); autoLayer.series.push(s);
   }
   if (al.resLine.length > 1) {
-    const s = chart.addLineSeries({ color: BEAR, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    const s = chart.addLineSeries({ color: BEAR, lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
     s.setData(al.resLine); autoLayer.series.push(s);
   }
   al.supports.forEach((lv, i) => {
-    try { autoLayer.lines.push(candle.createPriceLine({ price: lv.p, color: BULL, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'S' + (i + 1) + '×' + lv.n })); } catch (e) {}
+    try { autoLayer.lines.push(candle.createPriceLine({ price: lv.p, color: BULL, lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: 'S' + (i + 1) + '×' + lv.n })); } catch (e) {}
   });
   al.resistances.forEach((lv, i) => {
-    try { autoLayer.lines.push(candle.createPriceLine({ price: lv.p, color: BEAR, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'R' + (i + 1) + '×' + lv.n })); } catch (e) {}
+    try { autoLayer.lines.push(candle.createPriceLine({ price: lv.p, color: BEAR, lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: 'R' + (i + 1) + '×' + lv.n })); } catch (e) {}
   });
   $('stMsg').textContent = '자동선: 추세 ' + autoLayer.series.length + '개 · 지지 ' + al.supports.length + ' · 저항 ' + al.resistances.length;
 }
@@ -782,6 +783,7 @@ function toggleInd(id) {
 }
 function reapplyAll() {
   if (!chart || !daily.length) return;
+  if (!curStrategy) curStrategy = autoStrat;
   const ids = [...active.keys()], strat = curStrategy;
   for (const id of ids) clearInd(id);
   delete markerLayers['strat'];
@@ -823,6 +825,7 @@ function runStrategy(id, silent) {
   });
   markerLayers['strat'] = mk;
   curStrategy = id;
+  autoStrat = id;
   const bt = backtest(data, sig);
   $('stMsg').textContent = '전략 ' + (STRAT_NAME[id] || id) + ' → 거래 ' + bt.trades + '회 · 승률 ' + bt.winRate.toFixed(1) + '% · 누적수익 ' + (bt.totalReturn >= 0 ? '+' : '') + bt.totalReturn.toFixed(1) + '% (수수료 제외)';
   refreshMarkers(); updateChips();
