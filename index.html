@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>트레이딩 챠트</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<header id="topbar">
+  <div class="logo"><span class="logo-mark">◈</span> 트레이딩 챠트</div>
+  <div class="symbox">
+    <input id="symInput" value="AAPL" spellcheck="false" placeholder="심볼 (예: AAPL, 005930.KS)"/>
+    <button id="symGo" title="조회">조회</button>
+  </div>
+  <div id="ohlc" class="ohlc"><span class="sym">AAPL</span><span class="sep">·</span><span id="o"></span><span id="h"></span><span id="l"></span><span id="c"></span><span id="chg"></span></div>
+  <nav id="tfs">
+    <button data-tf="m1">1분</button><button data-tf="m5">5분</button><button data-tf="m15">15분</button><button data-tf="D" class="on">1D</button><button data-tf="W">1W</button><button data-tf="M">1M</button>
+  </nav>
+  <nav id="cur">
+    <button data-cur="USDT" class="on">USDT</button><button data-cur="KRW">KRW</button>
+  </nav>
+  <div class="ind">
+    <label><input type="checkbox" id="tMA20" checked/> MA20</label>
+    <label><input type="checkbox" id="tMA50" checked/> MA50</label>
+    <label><input type="checkbox" id="tVol" checked/> 거래량</label>
+  </div>
+  <button id="indBtn" title="지표 추가">ƒx 지표</button>
+  <button id="themeBtn" title="라이트/다크 전환">🌙</button>
+  <select id="stratSel" title="전략">
+    <option value="">전략 선택</option>
+    <option value="emaCross">EMA 크로스 9/21</option>
+    <option value="maCross">MA 크로스 50/200</option>
+    <option value="macd">MACD 크로스</option>
+    <option value="rsi">RSI 반전 70/30</option>
+    <option value="supertrend">슈퍼트렌드 반전</option>
+    <option value="sar">파라볼릭SAR 반전</option>
+    <option value="bb">볼린저 돌파</option>
+    <option value="stoch">스토캐스틱 크로스</option>
+    <option value="atrStop">ATR 추적손절 반전</option>
+  </select>
+  <button id="stratGo" title="전략 실행">실행</button>
+</header>
+<div id="main">
+  <aside id="rail" title="그리기 도구 (데코)">
+    <button class="tool on" title="십자선">✛</button>
+    <button class="tool" title="추세선">／</button>
+    <button class="tool" title="수평선">―</button>
+    <button class="tool" title="피보나치">≋</button>
+    <button class="tool" title="텍스트">T</button>
+    <button class="tool" title="지우개">⌫</button>
+  </aside>
+  <section id="center">
+    <div id="chart"></div>
+    <div id="panes"></div>
+    <div id="chips"></div>
+    <footer id="status"><span id="stSrc">연결 중…</span><span id="stTime"></span><span id="stMsg">십자선을 움직이면 OHLC가 표시됩니다</span></footer>
+  </section>
+  <aside id="watch">
+    <h3>관심종목</h3>
+    <div id="wl"></div>
+    <p class="note">클릭하면 차트가 바뀝니다.<br/>미국주: AAPL MSFT NVDA TSLA AMD<br/>한국주: 005930.KS 000660.KS</p>
+  </aside>
+</div>
+<script src="vendor/lightweight-charts.js"></script>
+<script src="indicators.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
