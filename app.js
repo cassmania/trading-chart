@@ -478,6 +478,7 @@ function clearAuto() {
   for (const s of autoLayer.series) { try { chart.removeSeries(s); } catch (e) {} }
   for (const l of autoLayer.lines) { try { candle.removePriceLine(l); } catch (e) {} }
   autoLayer.series = []; autoLayer.lines = [];
+  hideAutoLegend();
 }
 function drawAuto(anchorTime) {
   clearAuto();
@@ -491,11 +492,12 @@ function drawAuto(anchorTime) {
   const weekends = NATIVE.includes(srcKind);
   const al = autoLevels(data, idx, weekends, stepSec(data));
   if (al.supLine.length > 1) {
-    const s = chart.addLineSeries({ color: BULL, lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
+    const s = chart.addLineSeries({ color: '#089981', lineWidth: 1, priceLineVisible: false, lastValueVisible: true });
     s.setData(al.supLine); autoLayer.series.push(s);
   }
   if (al.resLine.length > 1) {
-    const s = chart.addLineSeries({ color: BEAR, lineWidth: 3, priceLineVisible: false, lastValueVisible: false });
+    const resColor = (typeof light !== 'undefined' && light) ? '#334155' : '#ffffff';
+    const s = chart.addLineSeries({ color: resColor, lineWidth: 1, priceLineVisible: false, lastValueVisible: true });
     s.setData(al.resLine); autoLayer.series.push(s);
   }
   al.supports.forEach((lv, i) => {
@@ -505,6 +507,34 @@ function drawAuto(anchorTime) {
     try { autoLayer.lines.push(candle.createPriceLine({ price: lv.p, color: BEAR, lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: 'R' + (i + 1) + '×' + lv.n })); } catch (e) {}
   });
   $('stMsg').textContent = '자동선: 추세 ' + autoLayer.series.length + '개 · 지지 ' + al.supports.length + ' · 저항 ' + al.resistances.length;
+  showAutoLegend();
+}
+function showAutoLegend() {
+  let leg = document.getElementById('autoleg');
+  if (!leg) {
+    leg = document.createElement('div');
+    leg.id = 'autoleg';
+    $('chart').appendChild(leg);
+  }
+  leg.innerHTML = '';
+  const row = (sw, txt) => {
+    const d = document.createElement('div');
+    d.className = 'alr';
+    const s = document.createElement('span');
+    s.className = 'alsw'; s.style.background = sw;
+    const t = document.createElement('span'); t.textContent = txt;
+    d.appendChild(s); d.appendChild(t); leg.appendChild(d);
+  };
+  const resColor = (typeof light !== 'undefined' && light) ? '#334155' : '#ffffff';
+  row('#089981', '상승 추세선 = 지지 (저점 연결, 이탈 시 매도 신호)');
+  row(resColor, '하락 추세선 = 저항 (고점 연결, 돌파 시 매수 신호)');
+  row(BULL, 'S1~3 = 지지 가격선 (반등 예상)');
+  row(BEAR, 'R1~3 = 저항 가격선 (조정 예상)');
+  leg.style.display = 'block';
+}
+function hideAutoLegend() {
+  const leg = document.getElementById('autoleg');
+  if (leg) leg.style.display = 'none';
 }
 
 const curData = () => NATIVE.includes(srcKind) ? daily : resample(daily, tf);
@@ -855,7 +885,7 @@ function buildIndPanel() {
 }
 document.addEventListener('DOMContentLoaded', init);
 document.addEventListener('DOMContentLoaded', () => {
-  $('themeBtn').onclick = () => { light = !light; applyTheme(); };
+  $('themeBtn').onclick = () => { light = !light; applyTheme(); if (autoMode) drawAuto(); };
   const fb = $('favBtn');
   if (fb) fb.onclick = toggleFav;
   const ab = $('autoBtn');
