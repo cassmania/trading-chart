@@ -57,6 +57,8 @@ body{background:var(--bg); color:var(--txt); font-family:"Segoe UI","맑은 고�
 .wlrow .r.up{color:var(--up)} .wlrow .r.down{color:var(--down)}
 #indBtn,#stratGo{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; font-weight:700; white-space:nowrap}
 #indBtn:hover,#stratGo:hover{border-color:var(--accent); color:#fff}
+#autoBtn{background:var(--panel2); color:var(--dim); border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; font-weight:700; white-space:nowrap}
+#autoBtn.on{background:var(--accent); color:#fff; border-color:var(--accent)}
 body.light #indBtn:hover,body.light #stratGo:hover{color:#131722}
 #themeBtn{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; white-space:nowrap}
 #themeBtn:hover{border-color:var(--accent)}

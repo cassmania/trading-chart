@@ -272,7 +272,10 @@ function init() {
   new ResizeObserver(es => { const r = es[0].contentRect; chart.applyOptions({ width: r.width, height: r.height }); }).observe($('chart'));
   const chartBox = $('chart');
   chartBox.tabIndex = 0;
-  chart.subscribeClick(() => { try { chartBox.focus({ preventScroll: true }); } catch (e) { chartBox.focus(); } });
+  chart.subscribeClick(p => {
+    try { chartBox.focus({ preventScroll: true }); } catch (e) { chartBox.focus(); }
+    if (p && p.time !== undefined) drawAuto(p.time);
+  });
   chartBox.addEventListener('keydown', e => {
     const ts = chart.timeScale();
     let r;
@@ -362,6 +365,48 @@ const active = new Map();       // id -> {series:[{c,s}], panes:[paneId], lines:
 const markerLayers = {};        // layerId -> markers[]
 let subCharts = [];             // {id, chart, box, handlers}
 let curStrategy = null, syncing = false;
+let autoMode = true;
+const autoLayer = { series: [], lines: [] };
+
+function stepSec(data) {
+  if (typeof data[0].time !== 'number') return 86400;
+  const ds = [];
+  for (let i = Math.max(1, data.length - 6); i < data.length; i++) ds.push(data[i].time - data[i - 1].time);
+  ds.sort((a, b) => a - b);
+  return ds.length ? ds[Math.floor(ds.length / 2)] : 60;
+}
+function clearAuto() {
+  for (const s of autoLayer.series) { try { chart.removeSeries(s); } catch (e) {} }
+  for (const l of autoLayer.lines) { try { candle.removePriceLine(l); } catch (e) {} }
+  autoLayer.series = []; autoLayer.lines = [];
+}
+function drawAuto(anchorTime) {
+  clearAuto();
+  if (!autoMode || !daily.length || !chart || !candle) return;
+  const data = curData();
+  let idx = data.length - 1;
+  if (anchorTime !== undefined && anchorTime !== null) {
+    const f = data.findIndex(b => b.time === anchorTime);
+    if (f >= 0) idx = f;
+  }
+  const weekends = srcKind === 'upbit';
+  const al = autoLevels(data, idx, weekends, stepSec(data));
+  if (al.supLine.length > 1) {
+    const s = chart.addLineSeries({ color: BULL, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    s.setData(al.supLine); autoLayer.series.push(s);
+  }
+  if (al.resLine.length > 1) {
+    const s = chart.addLineSeries({ color: BEAR, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    s.setData(al.resLine); autoLayer.series.push(s);
+  }
+  al.supports.forEach((lv, i) => {
+    try { autoLayer.lines.push(candle.createPriceLine({ price: lv.p, color: BULL, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'S' + (i + 1) + '×' + lv.n })); } catch (e) {}
+  });
+  al.resistances.forEach((lv, i) => {
+    try { autoLayer.lines.push(candle.createPriceLine({ price: lv.p, color: BEAR, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'R' + (i + 1) + '×' + lv.n })); } catch (e) {}
+  });
+  $('stMsg').textContent = '자동선: 추세 ' + autoLayer.series.length + '개 · 지지 ' + al.supports.length + ' · 저항 ' + al.resistances.length;
+}
 
 const curData = () => srcKind === 'upbit' ? daily : resample(daily, tf);
 const pts = (data, arr) => arr.map((v, i) => ({ time: data[i].time, value: v }))
@@ -642,8 +687,10 @@ function reapplyAll() {
   const ids = [...active.keys()], strat = curStrategy;
   for (const id of ids) clearInd(id);
   delete markerLayers['strat'];
+  clearAuto();
   for (const id of ids) toggleInd(id);
   if (strat) runStrategy(strat, true);
+  drawAuto();
 }
 function updateChips() {
   const box = $('chips');
@@ -708,6 +755,12 @@ function buildIndPanel() {
 document.addEventListener('DOMContentLoaded', init);
 document.addEventListener('DOMContentLoaded', () => {
   $('themeBtn').onclick = () => { light = !light; applyTheme(); };
+  const ab = $('autoBtn');
+  if (ab) ab.onclick = () => {
+    autoMode = !autoMode;
+    ab.classList.toggle('on', autoMode);
+    if (autoMode) drawAuto(); else { clearAuto(); $('stMsg').textContent = '자동선 해제'; }
+  };
   $('indBtn').onclick = () => { buildIndPanel(); $('indPanel').classList.toggle('hidden'); };
   $('stratGo').onclick = () => {
     const v = $('stratSel').value;
