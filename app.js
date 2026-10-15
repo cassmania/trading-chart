@@ -341,10 +341,8 @@ function analyzeActive() {
   // 누적 신뢰도가 있으면 그것을 우선, 없으면 이번 분석 1위
   let best = b.cmp.best, basis = '이번 분석';
   const roll = aggregateHistory(histFor(p.symbol, tf));
-  if (roll.best) {
-    const e = roll.perf.find(x => x.id === roll.best);
-    if (e && e.runs >= 2) { best = roll.best; basis = '누적 ' + e.runs + '회 평균승률 ' + e.avgWr.toFixed(1) + '%'; }
-  }
+  const rq = roll.perf.find(x => STRAT_NAME[x.id] && x.runs >= 2);
+  if (rq) { best = rq.id; basis = '누적 ' + rq.runs + '회 평균승률 ' + rq.avgWr.toFixed(1) + '%'; }
   if (best && best !== p.curStrategy) {
     autoStrat = best;
     try { localStorage.setItem('tvchart-strat', autoStrat); } catch (e) {}
@@ -360,6 +358,10 @@ function analyzeActive() {
   const p2 = n => String(n).padStart(2, '0');
   h += '<p class="bl">4시간 신뢰도 추적 ' + (lastRun ? '· 다음 분석 ' + p2(next.getHours()) + ':' + p2(next.getMinutes()) : '· 첫 추적 대기 중') + '</p>';
   h += '<table><tr><th>전략</th><th>신호</th><th>거래</th><th>승률</th><th>평균승률</th><th>수익</th></tr>';
+  if (p.lastCombo) {
+    const c = p.lastCombo, sg = c.lastSig ? (c.lastSig === 'BUY' ? '매수' : '매도') + ' ' + c.barsAgo + '봉전' : '—';
+    h += '<tr class="best"><td>★ 조합(' + c.bundle.length + '종)</td><td>' + hl(sg) + '</td><td>' + c.stats.trades + '</td><td>' + c.stats.winRate.toFixed(1) + '%</td><td>—</td><td>' + (c.stats.totalReturn >= 0 ? '+' : '') + c.stats.totalReturn.toFixed(1) + '%</td></tr>';
+  }
   for (const r of b.cmp.rows) {
     const nm = STRAT_NAME[r.id] || r.id;
     const sg = r.lastSig ? (r.lastSig === 'BUY' ? '매수' : '매도') + ' ' + r.barsAgo + '봉전' : '—';
@@ -393,6 +395,14 @@ function updateChips() {
     x.onclick = () => { delete activePane.markerLayers['strat']; activePane.curStrategy = null; activePane.refreshMarkers(); updateChips(); $('stMsg').textContent = '전략 해제'; };
     c.appendChild(t); c.appendChild(x); box.appendChild(c);
   }
+  if (activePane.lastCombo) {
+    const c = document.createElement('span');
+    c.className = 'chip';
+    const t = document.createElement('span'); t.textContent = '조합: ' + activePane.lastCombo.bundle.join('+');
+    const x = document.createElement('button'); x.textContent = '✕';
+    x.onclick = () => { delete activePane.markerLayers['combo']; activePane.lastCombo = null; activePane.refreshMarkers(); updateChips(); $('stMsg').textContent = '조합 해제'; };
+    c.appendChild(t); c.appendChild(x); box.appendChild(c);
+  }
 }
 function buildIndPanel() {
   let panel = $('indPanel');
@@ -402,6 +412,11 @@ function buildIndPanel() {
     $('center').appendChild(panel);
   }
   panel.innerHTML = '';
+  const comboBtn = document.createElement('button');
+  comboBtn.className = 'inditem';
+  comboBtn.textContent = '★ 최적 조합 계산·적용';
+  comboBtn.onclick = () => { if (activePane) { activePane.optimizeCombo(); buildIndPanel(); } };
+  panel.appendChild(comboBtn);
   const groups = {};
   for (const [id, name, g, notice] of INDS) { (groups[g] = groups[g] || []).push([id, name, notice]); }
   for (const g of Object.keys(groups)) {
@@ -431,6 +446,11 @@ async function scheduledBacktest() {
   if (data.length < 60) return;
   const cmp = compareStrategies(data);
   btHist.push({ t: Date.now(), sym: p.symbol, tf, rows: cmp.rows.map(r => ({ id: r.id, trades: r.trades, winRate: r.winRate, totalReturn: r.totalReturn })) });
+  try {
+    const cands = [...p.active.keys()].filter(id => COMBO_IDS.includes(id));
+    const g = greedyBundle(data, cands.length >= 2 ? cands : COMBO_IDS.slice(), 5);
+    btHist.push({ t: Date.now(), sym: p.symbol, tf, rows: [{ id: 'combo:' + g.bundle.slice().sort().join('+'), trades: g.stats.trades, winRate: g.stats.winRate, totalReturn: g.stats.totalReturn }] });
+  } catch (e) {}
   btHist = btHist.slice(-BT_MAX);
   saveBt();
   analyzeActive();

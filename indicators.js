@@ -823,7 +823,6 @@ function compareStrategies(d) {
   return { rows, best: rows[0] ? rows[0].id : null };
 }
 function aggregateHistory(hist) {
-  // [{rows:[{id,trades,winRate,totalReturn}]}] → 전략별 누적 정확도
   const m = {};
   for (const h of hist) {
     for (const r of (h.rows || [])) {
@@ -913,6 +912,87 @@ function autoLevels(data, endIdx, weekends = false, stepSec = 60) {
   return { supLine, resLine, supports, resistances };
 }
 
+/* 방향 신호: +1 매수우위, -1 매도우위, 0 중립 (막대별) */
+function trendVs(c, m) { return m.map((v, i) => v === null ? 0 : c[i] > v ? 1 : c[i] < v ? -1 : 0); }
+function dirSeries(id, d) {
+  const n = d.length, z = () => new Array(n).fill(0);
+  const C_ = C(d);
+  const sgn = (v, up, dn) => v === null ? 0 : v >= up ? 1 : v <= dn ? -1 : 0;
+  switch (id) {
+    case 'rsi14': { const r = RSI(d, 14); return r.map(v => sgn(v, 55, 45)); }
+    case 'stoch': { const s = Stoch(d); return s.K.map((v, i) => (v === null || s.D[i] === null) ? 0 : v > s.D[i] && v < 80 ? 1 : v < s.D[i] && v > 20 ? -1 : 0); }
+    case 'stochrsi': { const s = StochRSI(d); return s.K.map((v, i) => (v === null || s.D[i] === null) ? 0 : v > s.D[i] && v < 80 ? 1 : v < s.D[i] && v > 20 ? -1 : 0); }
+    case 'connors': { const c = ConnorsRSI(d); return c.map(v => sgn(v, 60, 40)); }
+    case 'mfi14': { const m = MFI(d, 14); return m.map(v => sgn(v, 55, 45)); }
+    case 'cci20': { const c = CCI(d, 20); return c.map(v => sgn(v, 100, -100)); }
+    case 'willr14': { const w = WilliamsR(d, 14); return w.map(v => sgn(v, -20, -80)); }
+    case 'roc12': { const r = ROC(d, 12); return r.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'mom10': { const m = Momentum(d, 10); return m.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'cmo9': { const c = CMO(d, 9); return c.map(v => sgn(v, 20, -20)); }
+    case 'tsi': { const t = TSI(d); return t.tsi.map((v, i) => (v === null || t.signal[i] === null) ? 0 : v > t.signal[i] ? 1 : v < t.signal[i] ? -1 : 0); }
+    case 'uo': { const u = UO(d); return u.map(v => sgn(v, 60, 40)); }
+    case 'ao': { const a = AO(d); return a.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'demarker13': { const x = DeMarker(d, 13); return x.map(v => sgn(v, 0.6, 0.4)); }
+    case 'rvi': { const r = RVI(d); return r.rvi.map((v, i) => (v === null || r.signal[i] === null) ? 0 : v > r.signal[i] ? 1 : v < r.signal[i] ? -1 : 0); }
+    case 'schaff': { const s = SchaffTC(d); return s.map(v => sgn(v, 75, 25)); }
+    case 'coppock': { const c = Coppock(d); return c.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'pgo': { const p = PGO(d); return p.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'force13': { const f = ForceIndex(d, 13); return f.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'chaikinosc': { const c = ChaikinOsc(d); return c.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'macd': { const m = MACD(d); return m.hist.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'adx': { const a = ADX(d); return a.adx.map((v, i) => (v === null || v < 20) ? 0 : a.pdi[i] > a.mdi[i] ? 1 : -1); }
+    case 'aroon': { const a = Aroon(d); return a.up.map((v, i) => (v === null || a.dn[i] === null) ? 0 : v > a.dn[i] ? 1 : v < a.dn[i] ? -1 : 0); }
+    case 'vortex': { const v = Vortex(d); return v.plus.map((x, i) => (x === null || v.minus[i] === null) ? 0 : x > v.minus[i] ? 1 : x < v.minus[i] ? -1 : 0); }
+    case 'kst': { const k = KST(d); return k.kst.map((v, i) => (v === null || k.signal[i] === null) ? 0 : v > k.signal[i] ? 1 : v < k.signal[i] ? -1 : 0); }
+    case 'supertrend': { const s = Supertrend(d); return s.dir.map(v => v === null ? 0 : v); }
+    case 'sar': { const s = SAR(d); return s.map((v, i) => v === null ? 0 : C_[i] > v ? 1 : -1); }
+    case 'bb20': { const b = PctB(d); return b.map(v => v === null ? 0 : v > 0.8 ? -1 : v < 0.2 ? 1 : 0); }
+    case 'cmf20': { const c = CMF(d, 20); return c.map(v => v === null ? 0 : v > 0.05 ? 1 : v < -0.05 ? -1 : 0); }
+    case 'obv': { const o = OBV(d); return o.map((v, i) => i < 6 || v === null ? 0 : v > o[i - 5] ? 1 : v < o[i - 5] ? -1 : 0); }
+    case 'emv14': { const e = EMV(d, 14); return e.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'klinger': { const k = Klinger(d); return k.k.map((v, i) => (v === null || k.signal[i] === null) ? 0 : v > k.signal[i] ? 1 : v < k.signal[i] ? -1 : 0); }
+    case 'trix18': { const t = TRIX(d, 18); return t.map(v => v === null ? 0 : v > 0 ? 1 : v < 0 ? -1 : 0); }
+    case 'sma20': return trendVs(C_, smaArr(C_, 20));
+    case 'sma50': return trendVs(C_, smaArr(C_, 50));
+    case 'ema20': return trendVs(C_, emaArr(C_, 20));
+    default: return z();
+  }
+}
+const COMBO_IDS = ['rsi14', 'stoch', 'stochrsi', 'macd', 'adx', 'supertrend', 'sar', 'bb20', 'ema20', 'sma50', 'cci20', 'mfi14', 'mom10', 'cmo9', 'ao', 'cmf20', 'obv', 'kst', 'aroon', 'vortex', 'trix18', 'willr14', 'roc12', 'klinger', 'tsi', 'force13'];
+function comboSignals(d, ids, thresh = 0.34) {
+  const series = ids.map(id => dirSeries(id, d));
+  const sig = new Array(d.length).fill(null);
+  let pos = 0;
+  for (let i = 0; i < d.length; i++) {
+    let s = 0, k = 0;
+    for (const arr of series) { if (arr[i] !== 0) { s += arr[i]; k++; } }
+    const score = k ? s / series.length : 0;
+    if (pos <= 0 && score >= thresh) { sig[i] = 'BUY'; pos = 1; }
+    else if (pos >= 0 && score <= -thresh) { sig[i] = 'SELL'; pos = -1; }
+  }
+  return sig;
+}
+function greedyBundle(d, candidateIds, maxK = 5) {
+  const cands = (candidateIds && candidateIds.length ? candidateIds : COMBO_IDS).filter(id => COMBO_IDS.includes(id));
+  const evalSet = ids => backtest(d, comboSignals(d, ids));
+  const steps = [];
+  let bundle = [], best = { totalReturn: -Infinity };
+  for (let k = 0; k < Math.min(maxK, cands.length); k++) {
+    let pick = null, pickStats = null;
+    for (const id of cands) {
+      if (bundle.includes(id)) continue;
+      const st = evalSet(bundle.concat([id]));
+      if (st.totalReturn > (pickStats ? pickStats.totalReturn : -Infinity)) { pick = id; pickStats = st; }
+    }
+    if (!pick || pickStats.totalReturn <= best.totalReturn) break;
+    bundle.push(pick); best = pickStats;
+    steps.push({ add: pick, trades: best.trades, winRate: best.winRate, totalReturn: best.totalReturn });
+  }
+  const sig = comboSignals(d, bundle.length ? bundle : cands.slice(0, 1));
+  const stats = backtest(d, sig);
+  return { bundle: bundle.length ? bundle : cands.slice(0, 1), signals: sig, stats, steps };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     smaArr, emaArr, rmaArr, wmaArr, hmaArr, linregArr, linSlope, stdevArr, highest, lowest,
@@ -921,6 +1001,6 @@ if (typeof module !== 'undefined' && module.exports) {
     ChaikinVol, Ulcer, Klinger, PVT, CMF, EMV, NetVol, VolOsc, OBV, Aroon, ADX, Vortex, KST,
     MACD, BB, PctB, Keltner, Donchian, Envelopes, Supertrend, SAR, Ichimoku, VWAP, VWMA,
     KAMA, McGinley, ALMA, VIDYA, T3, ZLEMA, DEMA, TEMA, TRIX, Alligator, Gator, BWMFI,
-    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, backtest, compareStrategies, aggregateHistory
+    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, backtest, compareStrategies, aggregateHistory, comboSignals, greedyBundle, COMBO_IDS
   };
 }

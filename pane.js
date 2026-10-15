@@ -445,9 +445,11 @@ class ChartPane {
     const ids = [...this.active.keys()], strat = this.curStrategy;
     for (const id of ids) this.clearInd(id);
     delete this.markerLayers['strat'];
+    delete this.markerLayers['combo'];
     this.clearAuto();
     for (const id of ids) this.toggleInd(id);
     if (strat) this.runStrategy(strat, true);
+    if (this.lastCombo) this.plotCombo();
     this.drawAuto();
   }
   runStrategy(id, silent) {
@@ -468,6 +470,49 @@ class ChartPane {
     if (this.hooks.onInd) this.hooks.onInd(this);
   }
   applyTheme() { paintOne(this.chart); for (const s of this.subCharts) paintOne(s.chart); }
+  optimizeCombo() {
+    if (!this.daily.length) return null;
+    const data = this.curData();
+    const cands = [...this.active.keys()].filter(id => COMBO_IDS.includes(id));
+    const use = cands.length >= 2 ? cands : COMBO_IDS.slice();
+    const g = greedyBundle(data, use, 5);
+    for (const id of [...this.active.keys()]) if (!g.bundle.includes(id)) this.clearInd(id);
+    for (const id of g.bundle) if (!this.active.has(id)) this.toggleInd(id);
+    const mk = [];
+    g.signals.forEach((s, i) => {
+      if (!s) return;
+      mk.push({ time: data[i].time, position: s === 'BUY' ? 'belowBar' : 'aboveBar', shape: s === 'BUY' ? 'arrowUp' : 'arrowDown', color: s === 'BUY' ? BULL : BEAR, text: '조합' + (s === 'BUY' ? '매수' : '매도') });
+    });
+    this.markerLayers['combo'] = mk;
+    let lastSig = null, barsAgo = -1;
+    for (let i = g.signals.length - 1; i >= 0; i--) {
+      if (g.signals[i] !== null) { lastSig = g.signals[i]; barsAgo = g.signals.length - 1 - i; break; }
+    }
+    this.lastCombo = { bundle: g.bundle, stats: g.stats, steps: g.steps, lastSig, barsAgo, id: 'combo:' + g.bundle.slice().sort().join('+') };
+    this.refreshMarkers();
+    this.msg('최적 조합 [' + g.bundle.join('+') + '] → 거래 ' + g.stats.trades + '회 · 승률 ' + g.stats.winRate.toFixed(1) + '% · 수익 ' + (g.stats.totalReturn >= 0 ? '+' : '') + g.stats.totalReturn.toFixed(1) + '%');
+    if (this.hooks.onInd) this.hooks.onInd(this);
+    return this.lastCombo;
+  }
+  plotCombo() {
+    if (!this.lastCombo || !this.daily.length) return;
+    const data = this.curData();
+    const sig = comboSignals(data, this.lastCombo.bundle);
+    const mk = [];
+    sig.forEach((s, i) => {
+      if (!s) return;
+      mk.push({ time: data[i].time, position: s === 'BUY' ? 'belowBar' : 'aboveBar', shape: s === 'BUY' ? 'arrowUp' : 'arrowDown', color: s === 'BUY' ? BULL : BEAR, text: '조합' + (s === 'BUY' ? '매수' : '매도') });
+    });
+    this.markerLayers['combo'] = mk;
+    this.lastCombo.stats = backtest(data, sig);
+    let lastSig = null, barsAgo = -1;
+    for (let i = sig.length - 1; i >= 0; i--) {
+      if (sig[i] !== null) { lastSig = sig[i]; barsAgo = sig.length - 1 - i; break; }
+    }
+    this.lastCombo.lastSig = lastSig;
+    this.lastCombo.barsAgo = barsAgo;
+    this.refreshMarkers();
+  }
   stopLive() {
     if (this.liveWS) { try { this.liveWS.close(); } catch (e) {} this.liveWS = null; }
     if (this.liveTimer) { clearInterval(this.liveTimer); this.liveTimer = null; }
