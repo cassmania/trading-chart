@@ -202,6 +202,31 @@ function marketLabelFor(kind, quote, sym) {
 function tfName() {
   return tf === 'D' ? '일봉' : tf === 'W' ? '주봉' : tf === 'M' ? '월봉' : tf === 'm1' ? '1분봉' : tf === 'm5' ? '5분봉' : '15분봉';
 }
+function buildBriefing(data, label, weekends, stepSec) {
+  if (!data || data.length < 60) return null;
+  const last = data[data.length - 1];
+  const C_ = data.map(b => b.close);
+  const fval = a => { const v = a.filter(x => x !== null); return v[v.length - 1]; };
+  const ma20 = fval(smaArr(C_, 20)), ma50 = fval(smaArr(C_, 50));
+  const rsi = fval(RSI(data, 14));
+  const mc = MACD(data), mh = fval(mc.hist);
+  const st = Stoch(data), sk = fval(st.K);
+  const ax = ADX(data), adx = fval(ax.adx), pdi = fval(ax.pdi), mdi = fval(ax.mdi);
+  const al = autoLevels(data, data.length - 1, weekends, stepSec);
+  const cmp = compareStrategies(data);
+  const pct = (x, r) => (r ? (100 * (x - r) / r) : 0);
+  const sup = al.supports[0], res = al.resistances[0];
+  const trend = last.close > ma20 && last.close > ma50 ? '정배열 상승' : last.close < ma20 && last.close < ma50 ? '역배열 하락' : '이평 혼조';
+  const mom = rsi >= 70 ? '과열' : rsi <= 30 ? '과매도' : rsi >= 50 ? '매수 우위' : '매도 우위';
+  const lines = [
+    '현재가 ' + fmtPx(last.close) + ' · 20일 이평 ' + fmtPx(ma20) + ' · 50일 이평 ' + fmtPx(ma50) + ' → ' + trend,
+    'RSI ' + rsi.toFixed(1) + '(' + mom + ') · MACD 히스토 ' + (mh >= 0 ? '+' : '') + mh.toFixed(2) + ' · 스토캐 ' + sk.toFixed(1),
+    'ADX ' + adx.toFixed(1) + (adx >= 25 ? '(추세 강함, ' + (pdi > mdi ? '+DI 우세 상승' : '-DI 우세 하락') + ')' : '(추세 약함, 횡보 가능)'),
+    sup ? '지지 S1 ' + fmtPx(sup.p) + ' (' + pct(last.close, sup.p).toFixed(1) + '% 위, 터치 ' + sup.n + '회)' : '근접 지지 없음',
+    res ? '저항 R1 ' + fmtPx(res.p) + ' (' + pct(res.p, last.close).toFixed(1) + '% 위, 터치 ' + res.n + '회)' : '근접 저항 없음',
+  ];
+  return { label, lines, cmp, last: last.close, time: last.time };
+}
 
 /* ---- 지표 테이블 ---- */
 const INDS = [
@@ -254,6 +279,7 @@ function setActive(p) {
     updateFavBtn();
     buildIndPanel();
     updateChips();
+    analyzeActive();
   }
 }
 function buildLayout(n, keepSyms) {
@@ -286,7 +312,7 @@ function buildLayout(n, keepSyms) {
         if (p !== activePane) return;
         try { document.title = fmtPx(price) + ' · ' + p.label() + ' — 트레이딩 챠트'; } catch (e) {}
       },
-      onSymbol: () => updateFavBtn()
+      onSymbol: () => { updateFavBtn(); analyzeActive(); }
     });
     cell.addEventListener('mousedown', () => { if (pane !== activePane) setActive(pane); });
     panes.push(pane);
@@ -299,6 +325,32 @@ function buildLayout(n, keepSyms) {
 function routeMsg(t) {
   if (t.startsWith('st:')) $('stTime').textContent = t.slice(3);
   else $('stMsg').textContent = t;
+}
+function analyzeActive() {
+  const p = activePane;
+  if (!p || !p.daily.length) return;
+  const data = p.curData();
+  if (data.length < 60) {
+    $('briefBody').innerHTML = '<p class="brief-empty">봉이 60개 미만이라 분석 생략</p>';
+    return;
+  }
+  const b = buildBriefing(data, p.label(), NATIVE.includes(p.srcKind), p.stepSec());
+  if (!b) return;
+  if (b.cmp.best && b.cmp.best !== p.curStrategy) {
+    autoStrat = b.cmp.best;
+    try { localStorage.setItem('tvchart-strat', autoStrat); } catch (e) {}
+    p.runStrategy(b.cmp.best, true);
+  }
+  $('briefTitle').textContent = b.label + ' 브리핑';
+  $('briefTime').textContent = b.time + ' 기준';
+  let h = b.lines.map(x => '<p class="bl">' + x + '</p>').join('');
+  h += '<table><tr><th>전략</th><th>신호</th><th>거래</th><th>승률</th><th>수익</th></tr>';
+  for (const r of b.cmp.rows) {
+    const nm = STRAT_NAME[r.id] || r.id;
+    const sg = r.lastSig ? (r.lastSig === 'BUY' ? '매수' : '매도') + ' ' + r.barsAgo + '봉전' : '—';
+    h += '<tr' + (r.id === b.cmp.best ? ' class="best"' : '') + '><td>' + (r.id === b.cmp.best ? '★ ' : '') + nm + '</td><td>' + sg + '</td><td>' + r.trades + '</td><td>' + r.winRate.toFixed(1) + '%</td><td>' + (r.totalReturn >= 0 ? '+' : '') + r.totalReturn.toFixed(1) + '%</td></tr>';
+  }
+  $('briefBody').innerHTML = h + '</table>';
 }
 function setLiveDot(on) {
   const d = $('liveDot');
@@ -437,6 +489,7 @@ function toggleFullscreen() {
 /* ---- 초기화 ---- */
 function init() {
   document.body.classList.toggle('light', light);
+  try { const s = localStorage.getItem('tvchart-strat'); if (s && STRAT_NAME[s]) autoStrat = s; } catch (e) {}
   document.querySelectorAll('#tfs button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#tfs button').forEach(x => x.classList.remove('on'));
     b.classList.add('on'); tf = b.dataset.tf;
@@ -491,8 +544,13 @@ function init() {
     const v = $('stratSel').value;
     if (!v) { $('stMsg').textContent = '전략을 선택하세요'; return; }
     if ($('indPanel') && !$('indPanel').classList.contains('hidden')) $('indPanel').classList.add('hidden');
-    if (activePane) activePane.runStrategy(v);
+    if (activePane) {
+      activePane.runStrategy(v);
+      try { localStorage.setItem('tvchart-strat', v); } catch (e) {}
+    }
   };
+  const bg = $('briefGo');
+  if (bg) bg.onclick = analyzeActive;
   buildLayout(1);
   refreshWatch();
 }

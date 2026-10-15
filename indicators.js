@@ -805,6 +805,23 @@ function backtest(d, sig) {
   if (pos !== null && c.length) { const r = c[c.length - 1] / pos; eq *= r; n++; if (r > 1) wins++; }
   return { trades: n, winRate: n ? 100 * wins / n : 0, totalReturn: (eq - 1) * 100 };
 }
+function compareStrategies(d) {
+  // 정확도(승률) 우선, 거래 3회 미만은 감점. 동점은 수익률로 결정
+  const rows = [];
+  for (const [id, fn] of Object.entries(Strat)) {
+    const sig = fn(d);
+    const bt = backtest(d, sig);
+    let lastSig = null, barsAgo = -1;
+    for (let i = sig.length - 1; i >= 0; i--) {
+      if (sig[i] !== null) { lastSig = sig[i]; barsAgo = sig.length - 1 - i; break; }
+    }
+    const eligible = bt.trades >= 3;
+    const score = (eligible ? bt.winRate : bt.winRate * bt.trades / 3) + bt.totalReturn / 1000;
+    rows.push({ id, trades: bt.trades, winRate: bt.winRate, totalReturn: bt.totalReturn, lastSig, barsAgo, eligible, score });
+  }
+  rows.sort((a, b) => b.score - a.score || b.totalReturn - a.totalReturn);
+  return { rows, best: rows[0] ? rows[0].id : null };
+}
 
 function swingPoints(data, lo, hi, order = 3) {
   const h = H(data), l = L(data), ups = [], dns = [];
@@ -891,6 +908,6 @@ if (typeof module !== 'undefined' && module.exports) {
     ChaikinVol, Ulcer, Klinger, PVT, CMF, EMV, NetVol, VolOsc, OBV, Aroon, ADX, Vortex, KST,
     MACD, BB, PctB, Keltner, Donchian, Envelopes, Supertrend, SAR, Ichimoku, VWAP, VWMA,
     KAMA, McGinley, ALMA, VIDYA, T3, ZLEMA, DEMA, TEMA, TRIX, Alligator, Gator, BWMFI,
-    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, backtest
+    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, backtest, compareStrategies
   };
 }
