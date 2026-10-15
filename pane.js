@@ -167,6 +167,8 @@ class ChartPane {
     this.autoLayer = { series: [], lines: [] };
     this.curStrategy = null; this.syncing = false;
     this.liveWS = null; this.liveTimer = null; this.livePrev = null;
+    this.replay = null; this.lastClick = null;
+    this.savedMarkers = null;
     this.chart = LightweightCharts.createChart(els.box, baseOpts());
     this.candle = this.chart.addCandlestickSeries({ upColor: BULL, downColor: BEAR, wickUpColor: BULL, wickDownColor: BEAR, borderVisible: false });
     this.vol = this.chart.addHistogramSeries({ priceScaleId: '', priceFormat: { type: 'volume' } });
@@ -179,7 +181,7 @@ class ChartPane {
     this.chart.subscribeClick(p => {
       try { els.box.focus({ preventScroll: true }); } catch (e) { try { els.box.focus(); } catch (e2) {} }
       if (self.hooks.onActivate) self.hooks.onActivate(self);
-      if (p && p.time !== undefined) self.drawAuto(p.time);
+      if (p && p.time !== undefined) { self.lastClick = p.time; self.drawAuto(p.time); }
     });
     els.box.tabIndex = 0;
     els.box.addEventListener('keydown', e => this.onKey(e));
@@ -279,6 +281,7 @@ class ChartPane {
   render() {
     const data = this.curData();
     if (!data.length) return;
+    this.stopReplay();
     this.els.sym.textContent = this.label();
     this.candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
     this.vol.setData(data.map(b => ({
@@ -468,6 +471,60 @@ class ChartPane {
     this.msg('전략 ' + (STRAT_NAME[id] || id) + ' → 거래 ' + bt.trades + '회 · 승률 ' + bt.winRate.toFixed(1) + '% · 누적수익 ' + (bt.totalReturn >= 0 ? '+' : '') + bt.totalReturn.toFixed(1) + '% (수수료 제외)');
     this.refreshMarkers();
     if (this.hooks.onInd) this.hooks.onInd(this);
+  }
+  /* ---- 리플레이 ---- */
+  startReplay(speedMs) {
+    if (!this.daily.length) return false;
+    this.stopReplay();
+    const data = this.curData();
+    let start = Math.max(20, data.length - 100);
+    if (this.lastClick !== null && this.lastClick !== undefined) {
+      const f = data.findIndex(b => b.time === this.lastClick);
+      if (f >= 20) start = f;
+    }
+    this.replay = { idx: start, total: data.length };
+    for (const [, st] of this.active) for (const s of st.series) { try { s.s.applyOptions({ visible: false }); } catch (e) {} }
+    for (const p of this.subCharts) { try { p.wrap.style.display = 'none'; } catch (e) {} }
+    this.savedMarkers = this.markerLayers;
+    this.markerLayers = {};
+    this.refreshMarkers();
+    this.clearAuto();
+    this.ma20.applyOptions({ visible: true });
+    this.ma50.applyOptions({ visible: true });
+    this.vol.applyOptions({ visible: true });
+    const self = this;
+    this.replay.timer = setInterval(() => self.replayTick(), speedMs || 400);
+    this.replayTick();
+    return true;
+  }
+  replayTick() {
+    const rp = this.replay;
+    if (!rp) return false;
+    const data = this.curData();
+    if (rp.idx >= data.length) { this.stopReplay(); return false; }
+    const slice = data.slice(0, rp.idx + 1);
+    const C_ = slice.map(b => b.close);
+    this.candle.setData(slice.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+    this.vol.setData(slice.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? 'rgba(242,54,69,.55)' : 'rgba(41,98,255,.55)' })));
+    this.ma20.setData(sma(slice, 20));
+    this.ma50.setData(sma(slice, 50));
+    const last = slice[slice.length - 1];
+    this.setHead(last);
+    this.msg('리플레이 ' + (rp.idx + 1) + '/' + data.length + ' · ' + fmtT(last.time));
+    try { this.chart.timeScale().scrollToRealTime(); } catch (e) {}
+    rp.idx++;
+    if (rp.idx >= data.length) { this.stopReplay(); return false; }
+    return true;
+  }
+  stopReplay() {
+    const rp = this.replay;
+    this.replay = null;
+    if (!rp) return;
+    if (rp.timer) { try { clearInterval(rp.timer); } catch (e) {} }
+    if (this.savedMarkers) { this.markerLayers = this.savedMarkers; this.savedMarkers = null; this.refreshMarkers(); }
+    for (const [, st] of this.active) for (const s of st.series) { try { s.s.applyOptions({ visible: true }); } catch (e) {} }
+    for (const p of this.subCharts) { try { p.wrap.style.display = ''; } catch (e) {} }
+    if (this.daily.length) this.render();
   }
   applyTheme() { paintOne(this.chart); for (const s of this.subCharts) paintOne(s.chart); }
   optimizeCombo() {

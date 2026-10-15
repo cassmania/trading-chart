@@ -44,6 +44,8 @@ body{background:var(--bg); color:var(--txt); font-family:"Segoe UI","맑은 고�
 #layoutSel button.on{color:#fff; background:var(--accent)}
 #fsBtn{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; white-space:nowrap}
 #fsBtn:hover{border-color:var(--accent)}
+#playBtn,#stopBtn{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; white-space:nowrap}
+#playBtn:hover,#stopBtn:hover{border-color:var(--accent)}
 #main:fullscreen{background:var(--bg); padding:6px}
 #grid{flex:1 1 auto; display:grid; gap:6px; min-height:0; min-width:0}
 #grid.cols-1{grid-template-columns:1fr; grid-template-rows:1fr}

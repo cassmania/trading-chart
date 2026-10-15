@@ -586,6 +586,13 @@ function init() {
   if (tb) tb.onclick = () => { light = !light; applyTheme(); };
   const fsb = $('fsBtn');
   if (fsb) fsb.onclick = toggleFullscreen;
+  const pb = $('playBtn');
+  if (pb) pb.onclick = () => {
+    if (activePane && activePane.startReplay(400)) $('stMsg').textContent = '리플레이 시작 (클릭한 봉부터, 없으면 100봉 전)';
+    else if (activePane) $('stMsg').textContent = '리플레이할 데이터 없음';
+  };
+  const sb = $('stopBtn');
+  if (sb) sb.onclick = () => { if (activePane) { activePane.stopReplay(); $('stMsg').textContent = '리플레이 정지'; } };
   document.querySelectorAll('#rail .tool').forEach(t => t.onclick = () => {
     document.querySelectorAll('#rail .tool').forEach(x => x.classList.remove('on'));
     t.classList.add('on');
