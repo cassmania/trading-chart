@@ -351,7 +351,7 @@ function buildLayout(n, keepSyms) {
   for (const o of olds) { try { o.destroy(); } catch (e) {} }
   const syms = keepSyms && keepSyms.length ? keepSyms : DEFAULT_SYMS;
   panes.forEach((p, i) => {
-    const e = syms[i % syms.length];
+    const e = i < syms.length ? syms[i] : { s: DEFAULT_SYMS[i % DEFAULT_SYMS.length], t: tf };
     if (e && typeof e === 'object') { p.tf = e.t || tf; if (p.els.ctf) p.els.ctf.value = p.tf; p.load(e.s); }
     else p.load(e || 'BTC');
   });
@@ -360,8 +360,9 @@ function buildLayout(n, keepSyms) {
 }
 function saveLayout() {
   try {
+    if (!panes.length || panes.some(p => !p.symbol)) return;
     localStorage.setItem('tvchart-layout', JSON.stringify({
-      n: panes.length, syms: panes.map(p => ({ s: p.symbol, t: p.tf })).filter(x => x.s), tf, currency
+      n: panes.length, syms: panes.map(p => ({ s: p.symbol, t: p.tf })), tf, currency
     }));
   } catch (e) {}
 }

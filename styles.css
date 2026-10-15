@@ -136,7 +136,7 @@ body.light #indBtn:hover,body.light #stratGo:hover{color:#131722}
 .inditem.on{color:var(--accent); font-weight:700}
 .inditem small{color:var(--dim); margin-left:6px}
 #chips{display:flex; gap:6px; flex-wrap:wrap; padding:6px 12px 0}
-#brief{margin:6px 12px 0; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 12px; max-height:190px; overflow-y:auto}
+#brief{margin:6px 12px 0; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 12px; flex:0 0 auto}
 .brief-head{display:flex; gap:10px; align-items:center; font-size:13px}
 .brief-head #briefTime{color:var(--dim); font-size:11px}
 .brief-head #briefGo{margin-left:auto; background:var(--accent); color:#fff; border:none; border-radius:6px; padding:4px 12px; cursor:pointer; font-weight:700}
@@ -160,7 +160,7 @@ body.light #indBtn:hover,body.light #stratGo:hover{color:#131722}
   .ohlc{font-size:11px}
   #indPanel{left:8px; right:8px; width:auto; top:110px}
   .help-card{width:94%}
-  #brief{max-height:250px}
+  #brief{max-height:250px; overflow-y:auto}
   .cpanes .subpane .pb{height:120px}
 }
 #chips:empty{display:none}
