@@ -822,6 +822,19 @@ function compareStrategies(d) {
   rows.sort((a, b) => b.score - a.score || b.totalReturn - a.totalReturn);
   return { rows, best: rows[0] ? rows[0].id : null };
 }
+function aggregateHistory(hist) {
+  // [{rows:[{id,trades,winRate,totalReturn}]}] → 전략별 누적 정확도
+  const m = {};
+  for (const h of hist) {
+    for (const r of (h.rows || [])) {
+      const e = m[r.id] || (m[r.id] = { id: r.id, runs: 0, wrSum: 0, trades: 0, retSum: 0, lastWr: 0 });
+      e.runs++; e.wrSum += r.winRate; e.trades += r.trades; e.retSum += r.totalReturn; e.lastWr = r.winRate;
+    }
+  }
+  const perf = Object.values(m).map(e => ({ id: e.id, runs: e.runs, trades: e.trades, avgWr: e.wrSum / e.runs, avgRet: e.retSum / e.runs, lastWr: e.lastWr }));
+  perf.sort((a, b) => b.avgWr - a.avgWr || b.avgRet - a.avgRet);
+  return { perf, best: perf.length ? perf[0].id : null };
+}
 
 function swingPoints(data, lo, hi, order = 3) {
   const h = H(data), l = L(data), ups = [], dns = [];
@@ -908,6 +921,6 @@ if (typeof module !== 'undefined' && module.exports) {
     ChaikinVol, Ulcer, Klinger, PVT, CMF, EMV, NetVol, VolOsc, OBV, Aroon, ADX, Vortex, KST,
     MACD, BB, PctB, Keltner, Donchian, Envelopes, Supertrend, SAR, Ichimoku, VWAP, VWMA,
     KAMA, McGinley, ALMA, VIDYA, T3, ZLEMA, DEMA, TEMA, TRIX, Alligator, Gator, BWMFI,
-    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, backtest, compareStrategies
+    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, backtest, compareStrategies, aggregateHistory
   };
 }

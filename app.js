@@ -202,6 +202,8 @@ function marketLabelFor(kind, quote, sym) {
 function tfName() {
   return tf === 'D' ? '일봉' : tf === 'W' ? '주봉' : tf === 'M' ? '월봉' : tf === 'm1' ? '1분봉' : tf === 'm5' ? '5분봉' : '15분봉';
 }
+const RK_RE = /(매도우위|매수우위|매도|매수|지지|저항|현재가|하락|상승|과열|과매도|돌파|이탈|반등|조정)/g;
+function hl(s) { return String(s).replace(RK_RE, '<b class="rk">$1</b>'); }
 function buildBriefing(data, label, weekends, stepSec) {
   if (!data || data.length < 60) return null;
   const last = data[data.length - 1];
@@ -336,19 +338,33 @@ function analyzeActive() {
   }
   const b = buildBriefing(data, p.label(), NATIVE.includes(p.srcKind), p.stepSec());
   if (!b) return;
-  if (b.cmp.best && b.cmp.best !== p.curStrategy) {
-    autoStrat = b.cmp.best;
-    try { localStorage.setItem('tvchart-strat', autoStrat); } catch (e) {}
-    p.runStrategy(b.cmp.best, true);
+  // 누적 신뢰도가 있으면 그것을 우선, 없으면 이번 분석 1위
+  let best = b.cmp.best, basis = '이번 분석';
+  const roll = aggregateHistory(histFor(p.symbol, tf));
+  if (roll.best) {
+    const e = roll.perf.find(x => x.id === roll.best);
+    if (e && e.runs >= 2) { best = roll.best; basis = '누적 ' + e.runs + '회 평균승률 ' + e.avgWr.toFixed(1) + '%'; }
   }
+  if (best && best !== p.curStrategy) {
+    autoStrat = best;
+    try { localStorage.setItem('tvchart-strat', autoStrat); } catch (e) {}
+    p.runStrategy(best, true);
+  }
+  const rollMap = {};
+  for (const x of roll.perf) rollMap[x.id] = x;
   $('briefTitle').textContent = b.label + ' 브리핑';
-  $('briefTime').textContent = b.time + ' 기준';
-  let h = b.lines.map(x => '<p class="bl">' + x + '</p>').join('');
-  h += '<table><tr><th>전략</th><th>신호</th><th>거래</th><th>승률</th><th>수익</th></tr>';
+  $('briefTime').textContent = b.time + ' 기준 · 기본전략 ' + (STRAT_NAME[autoStrat] || autoStrat) + '(' + basis + ')';
+  let h = b.lines.map(x => '<p class="bl">' + hl(x) + '</p>').join('');
+  const lastRun = histFor(p.symbol, tf).reduce((m, x) => Math.max(m, x.t || 0), 0);
+  const next = lastRun ? new Date(lastRun + BT_MS) : null;
+  const p2 = n => String(n).padStart(2, '0');
+  h += '<p class="bl">4시간 신뢰도 추적 ' + (lastRun ? '· 다음 분석 ' + p2(next.getHours()) + ':' + p2(next.getMinutes()) : '· 첫 추적 대기 중') + '</p>';
+  h += '<table><tr><th>전략</th><th>신호</th><th>거래</th><th>승률</th><th>평균승률</th><th>수익</th></tr>';
   for (const r of b.cmp.rows) {
     const nm = STRAT_NAME[r.id] || r.id;
     const sg = r.lastSig ? (r.lastSig === 'BUY' ? '매수' : '매도') + ' ' + r.barsAgo + '봉전' : '—';
-    h += '<tr' + (r.id === b.cmp.best ? ' class="best"' : '') + '><td>' + (r.id === b.cmp.best ? '★ ' : '') + nm + '</td><td>' + sg + '</td><td>' + r.trades + '</td><td>' + r.winRate.toFixed(1) + '%</td><td>' + (r.totalReturn >= 0 ? '+' : '') + r.totalReturn.toFixed(1) + '%</td></tr>';
+    const avg = rollMap[r.id] ? rollMap[r.id].avgWr.toFixed(1) + '%(' + rollMap[r.id].runs + '회)' : '—';
+    h += '<tr' + (r.id === b.cmp.best ? ' class="best"' : '') + '><td>' + (r.id === b.cmp.best ? '★ ' : '') + nm + '</td><td>' + hl(sg) + '</td><td>' + r.trades + '</td><td>' + r.winRate.toFixed(1) + '%</td><td>' + avg + '</td><td>' + (r.totalReturn >= 0 ? '+' : '') + r.totalReturn.toFixed(1) + '%</td></tr>';
   }
   $('briefBody').innerHTML = h + '</table>';
 }
@@ -399,6 +415,29 @@ function buildIndPanel() {
       panel.appendChild(b);
     }
   }
+}
+
+/* ---- 4시간 백테스트 스케줄러 ---- */
+const BT_MS = 4 * 3600 * 1000, BT_MAX = 60;
+let btHist = [];
+try { btHist = JSON.parse(localStorage.getItem('tvchart-bt') || '[]'); if (!Array.isArray(btHist)) btHist = []; } catch (e) { btHist = []; }
+function saveBt() { try { localStorage.setItem('tvchart-bt', JSON.stringify(btHist.slice(-BT_MAX))); } catch (e) {} }
+function histFor(sym, tfv) { return btHist.filter(h => h.sym === sym && h.tf === tfv); }
+async function scheduledBacktest() {
+  const p = activePane;
+  if (!p || !p.symbol) return;
+  try { await p.load(p.symbol); } catch (e) {}
+  const data = p.curData();
+  if (data.length < 60) return;
+  const cmp = compareStrategies(data);
+  btHist.push({ t: Date.now(), sym: p.symbol, tf, rows: cmp.rows.map(r => ({ id: r.id, trades: r.trades, winRate: r.winRate, totalReturn: r.totalReturn })) });
+  btHist = btHist.slice(-BT_MAX);
+  saveBt();
+  analyzeActive();
+}
+function lastBtRun() {
+  if (!activePane) return 0;
+  return histFor(activePane.symbol, tf).reduce((m, x) => Math.max(m, x.t || 0), 0);
 }
 
 /* ---- 즐겨찾기·관심종목 ---- */
@@ -553,5 +592,9 @@ function init() {
   if (bg) bg.onclick = analyzeActive;
   buildLayout(1);
   refreshWatch();
+  setInterval(() => { scheduledBacktest().catch(() => {}); }, BT_MS);
+  setTimeout(() => {
+    if (Date.now() - lastBtRun() > BT_MS) scheduledBacktest().catch(() => {});
+  }, 60000);
 }
 document.addEventListener('DOMContentLoaded', init);
