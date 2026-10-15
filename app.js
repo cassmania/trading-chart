@@ -314,7 +314,7 @@ function buildLayout(n, keepSyms) {
         if (p !== activePane) return;
         try { document.title = fmtPx(price) + ' · ' + p.label() + ' — 트레이딩 챠트'; } catch (e) {}
       },
-      onSymbol: () => { updateFavBtn(); analyzeActive(); }
+      onSymbol: () => { updateFavBtn(); analyzeActive(); saveLayout(); }
     });
     cell.addEventListener('mousedown', () => { if (pane !== activePane) setActive(pane); });
     panes.push(pane);
@@ -323,6 +323,14 @@ function buildLayout(n, keepSyms) {
   const syms = keepSyms && keepSyms.length ? keepSyms : DEFAULT_SYMS;
   panes.forEach((p, i) => p.load(syms[i % syms.length]));
   setActive(panes[0]);
+  saveLayout();
+}
+function saveLayout() {
+  try {
+    localStorage.setItem('tvchart-layout', JSON.stringify({
+      n: panes.length, syms: panes.map(p => p.symbol).filter(Boolean), tf, currency
+    }));
+  } catch (e) {}
 }
 function routeMsg(t) {
   if (t.startsWith('st:')) $('stTime').textContent = t.slice(3);
@@ -549,6 +557,8 @@ function toggleFullscreen() {
 function init() {
   document.body.classList.toggle('light', light);
   try { const s = localStorage.getItem('tvchart-strat'); if (s && STRAT_NAME[s]) autoStrat = s; } catch (e) {}
+  let savedLayout = null;
+  try { savedLayout = JSON.parse(localStorage.getItem('tvchart-layout') || 'null'); } catch (e) {}
   document.querySelectorAll('#tfs button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#tfs button').forEach(x => x.classList.remove('on'));
     b.classList.add('on'); tf = b.dataset.tf;
@@ -617,7 +627,16 @@ function init() {
   };
   const bg = $('briefGo');
   if (bg) bg.onclick = analyzeActive;
-  buildLayout(1);
+  if (savedLayout && savedLayout.n >= 1 && savedLayout.n <= 8) {
+    if (savedLayout.tf) tf = savedLayout.tf;
+    if (savedLayout.currency) currency = savedLayout.currency;
+    document.querySelectorAll('#tfs button').forEach(x => x.classList.toggle('on', x.dataset.tf === tf));
+    document.querySelectorAll('#cur button').forEach(x => x.classList.toggle('on', x.dataset.cur === currency));
+    document.querySelectorAll('#layoutSel button').forEach(x => x.classList.toggle('on', +x.dataset.n === savedLayout.n));
+    buildLayout(savedLayout.n, savedLayout.syms && savedLayout.syms.length ? savedLayout.syms : undefined);
+  } else {
+    buildLayout(1);
+  }
   refreshWatch();
   setInterval(() => { scheduledBacktest().catch(() => {}); }, BT_MS);
   setTimeout(() => {
