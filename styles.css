@@ -60,6 +60,9 @@ body{background:var(--bg); color:var(--txt); font-family:"Segoe UI","맑은 고�
 .cellbar .csym{background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:3px 6px; width:84px; text-transform:uppercase}
 .cellbar .cgo{background:var(--accent); color:#fff; border:none; border-radius:5px; padding:3px 9px; cursor:pointer; font-weight:700}
 .cellbar .cfs{margin-left:auto; background:transparent; color:var(--dim); border:1px solid var(--line); border-radius:5px; padding:2px 8px; cursor:pointer}
+.cellbar .cpx{font-size:16px; font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap}
+.cellbar .cpx.up{color:var(--up)} .cellbar .cpx.down{color:var(--down)}
+.cellbar .ctf{background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:3px 4px; font-size:11px; max-width:76px}
 .cellbar .cfs:hover{color:var(--txt); border-color:var(--accent)}
 .cell:fullscreen{background:var(--bg); border-radius:0}
 .cell:fullscreen .cchart{min-height:0}

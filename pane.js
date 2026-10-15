@@ -166,6 +166,7 @@ class ChartPane {
     this.active = new Map(); this.markerLayers = {}; this.subCharts = [];
     this.autoLayer = { series: [], lines: [] };
     this.curStrategy = null; this.syncing = false;
+    this.tf = (typeof tf !== 'undefined' && tf) ? tf : 'D';
     this.liveWS = null; this.liveTimer = null; this.livePrev = null;
     this.replay = null; this.lastClick = null;
     this.savedMarkers = null;
@@ -195,7 +196,9 @@ class ChartPane {
     const m = this.srcQuote.split('-');
     return m[1] + '/' + m[0];
   }
-  curData() { return NATIVE.includes(this.srcKind) ? this.daily : resample(this.daily, tf); }
+  curData() { return NATIVE.includes(this.srcKind) ? this.daily : resample(this.daily, this.tf); }
+  isIntra() { return !!INTRA[this.tf]; }
+  setTF(v) { this.tf = v; return this.load(this.symbol); }
   dec() {
     if (!this.daily.length) return 2;
     const c = this.daily[this.daily.length - 1].close;
@@ -207,6 +210,10 @@ class ChartPane {
     e.h.textContent = 'H ' + fmt(bar.high, d);
     e.l.textContent = 'L ' + fmt(bar.low, d);
     e.c.textContent = 'C ' + fmt(bar.close, d);
+    if (e.px) {
+      e.px.textContent = fmt(bar.close, d);
+      e.px.className = 'cpx ' + (bar.close >= bar.open ? 'up' : 'down');
+    }
   }
   setChg(last, prev) {
     const d = this.dec(), el = this.els.chg;
@@ -245,20 +252,20 @@ class ChartPane {
     const base = cryptoBase(this.symbol);
     let done = false;
     for (const step of plan) {
-      if (isIntra() && step === 'stooq') continue;
+      if (this.isIntra() && step === 'stooq') continue;
       try {
         if (step === 'binance') {
-          const r = await tryBinance(base, tf);
+          const r = await tryBinance(base, this.tf);
           this.daily = r.data; this.srcKind = 'binance'; this.srcQuote = r.market;
-          this.msg('실시간 데이터: 바이낸스 ' + r.market + ' (' + tfName() + ')');
+          this.msg('실시간 데이터: 바이낸스 ' + r.market + ' (' + tfName(this.tf) + ')');
         } else if (step === 'mexc') {
-          const r = await tryMexc(base, tf);
+          const r = await tryMexc(base, this.tf);
           this.daily = r.data; this.srcKind = 'mexc'; this.srcQuote = r.market;
-          this.msg('실시간 데이터: MEXC ' + r.market + ' (' + tfName() + ')');
+          this.msg('실시간 데이터: MEXC ' + r.market + ' (' + tfName(this.tf) + ')');
         } else if (step === 'upbit') {
-          const u = isIntra() ? await tryUpbitIntra(this.symbol, INTRA[tf]) : await tryUpbit(this.symbol, tf);
+          const u = this.isIntra() ? await tryUpbitIntra(this.symbol, INTRA[this.tf]) : await tryUpbit(this.symbol, this.tf);
           this.daily = u.data; this.srcKind = 'upbit'; this.srcQuote = u.market;
-          this.msg('실시간 데이터: 업비트 ' + u.market + ' (' + tfName() + ')');
+          this.msg('실시간 데이터: 업비트 ' + u.market + ' (' + tfName(this.tf) + ')');
         } else {
           this.daily = await fetchStooq(this.symbol);
           this.srcKind = 'stooq'; this.srcQuote = '';
@@ -269,7 +276,7 @@ class ChartPane {
       } catch (e) {}
     }
     if (!done) {
-      if (isIntra()) { this.msg('분봉은 코인만 지원 — ' + this.symbol + ' 불가'); return; }
+      if (this.isIntra()) { this.msg('분봉은 코인만 지원 — ' + this.symbol + ' 불가'); return; }
       this.daily = genDemo(this.symbol);
       this.srcKind = 'demo'; this.srcQuote = '';
       this.msg('오프라인 데모 데이터 (시세 서버 접근 실패)');
@@ -295,7 +302,7 @@ class ChartPane {
     this.vol.applyOptions({ visible: this.hooks.vol !== false });
     const last = data[data.length - 1], prev = data[data.length - 2] || last;
     this.setHead(last); this.setChg(last.close, prev.close);
-    this.chart.applyOptions({ timeScale: { timeVisible: isIntra() } });
+    this.chart.applyOptions({ timeScale: { timeVisible: this.isIntra() } });
     this.chart.timeScale().fitContent();
     this.msg('st:' + '봉 ' + data.length + '개 · ' + fmtT(data[0].time) + ' ~ ' + fmtT(last.time) + ' · Vol ' + fmtV(last.volume));
     this.reapplyAll();

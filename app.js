@@ -8,8 +8,21 @@ try { favs = JSON.parse(localStorage.getItem('tvchart-fav') || '[]'); if (!Array
 function saveFavs() { try { localStorage.setItem('tvchart-fav', JSON.stringify(favs)); } catch (e) {} }
 
 const WATCH = ['BTC', 'ETH', 'XRP', 'SOL', 'ONDO', 'AAPL', '005930.KS'];
-const INTRA = { m1: 1, m5: 5, m15: 15 };
-const BINV = { D: '1d', W: '1w', M: '1M', m1: '1m', m5: '5m', m15: '15m' };
+const INTRA = { m1: 1, m5: 5, m15: 15, m30: 30, h1: 60, h4: 240, h12: 'H12' };
+const BINV = { D: '1d', W: '1w', M: '1M', m1: '1m', m5: '5m', m15: '15m', m30: '30m', h1: '1h', h4: '4h', h12: '12h' };
+const UPBIT_MIN = { m1: 1, m5: 5, m15: 15, m30: 30, h1: 60, h4: 240 };
+function resampleIntra(data, seconds) {
+  const out = [];
+  let cur = null;
+  const flush = () => { if (cur) out.push(cur); cur = null; };
+  for (const b of data) {
+    const k = Math.floor(b.time / seconds);
+    if (!cur || cur.k !== k) { flush(); cur = { k, time: k * seconds, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume }; }
+    else { cur.high = Math.max(cur.high, b.high); cur.low = Math.min(cur.low, b.low); cur.close = b.close; cur.volume += b.volume; }
+  }
+  flush();
+  return out.map(({ time, open, high, low, close, volume }) => ({ time, open, high, low, close, volume }));
+}
 const NATIVE = ['binance', 'mexc', 'upbit'];
 const isIntra = () => !!INTRA[tf];
 const THEMES = {
@@ -94,6 +107,10 @@ async function tryUpbit(sym, tf, quote) {
 }
 async function tryUpbitIntra(sym, unit, quote) {
   const market = upbitMarket(sym, quote);
+  if (unit === 'h12') {
+    const r = await tryUpbitIntra(sym, 240, quote);
+    return { market: r.market, data: resampleIntra(r.data, 12 * 3600) };
+  }
   const r = await fetch('https://api.upbit.com/v1/candles/minutes/' + unit + '?market=' + market + '&count=200');
   if (!r.ok) throw new Error('upbit ' + r.status);
   const j = await r.json();
@@ -199,8 +216,10 @@ function marketLabelFor(kind, quote, sym) {
   const m = quote.split('-');
   return m[1] + '/' + m[0];
 }
-function tfName() {
-  return tf === 'D' ? '일봉' : tf === 'W' ? '주봉' : tf === 'M' ? '월봉' : tf === 'm1' ? '1분봉' : tf === 'm5' ? '5분봉' : '15분봉';
+function tfName(t) {
+  t = t || tf;
+  const m = { D: '일봉', W: '주봉', M: '월봉', m1: '1분봉', m5: '5분봉', m15: '15분봉', m30: '30분봉', h1: '1시간봉', h4: '4시간봉', h12: '12시간봉' };
+  return m[t] || t;
 }
 const RK_RE = /(매도우위|매수우위|매도|매수|지지|저항|현재가|하락|상승|과열|과매도|돌파|이탈|반등|조정)/g;
 function hl(s) { return String(s).replace(RK_RE, '<b class="rk">$1</b>'); }
@@ -294,6 +313,8 @@ function buildLayout(n, keepSyms) {
     const cell = document.createElement('div');
     cell.className = 'cell';
     cell.innerHTML = '<div class="cellbar"><input class="csym" spellcheck="false"/><button class="cgo">조회</button>'
+      + '<span class="cpx"></span>'
+      + '<select class="ctf"><option value="m1">1분</option><option value="m15">15분</option><option value="m30">30분</option><option value="h1">1시간</option><option value="h4">4시간</option><option value="h12">12시간</option><option value="D">1일</option><option value="W">주봉</option><option value="M">월봉</option></select>'
       + '<span class="cohlc"><b class="cs"></b> <span class="co"></span> <span class="ch"></span> <span class="cl"></span> <span class="cc"></span> <span class="cg"></span></span><button class="cfs" title="이 차트 전체화면">⛶</button></div>'
       + '<div class="cchart" tabindex="0"></div><div class="cpanes"></div><div id="autoleg"></div>';
     grid.appendChild(cell);
@@ -306,7 +327,7 @@ function buildLayout(n, keepSyms) {
     };
     const els = {
       cell, box: q('.cchart'), panes: q('.cpanes'),
-      symInput: q('.csym'), symGo: q('.cgo'),
+      symInput: q('.csym'), symGo: q('.cgo'), ctf: q('.ctf'), px: q('.cpx'),
       sym: q('.cs'), o: q('.co'), h: q('.ch'), l: q('.cl'), c: q('.cc'), chg: q('.cg')
     };
     const pane = new ChartPane(els, {
@@ -323,18 +344,24 @@ function buildLayout(n, keepSyms) {
       onSymbol: () => { updateFavBtn(); analyzeActive(); saveLayout(); }
     });
     cell.addEventListener('mousedown', () => { if (pane !== activePane) setActive(pane); });
+    els.ctf.value = pane.tf;
+    els.ctf.onchange = ev => { pane.setTF(ev.target.value); saveLayout(); };
     panes.push(pane);
   }
   for (const o of olds) { try { o.destroy(); } catch (e) {} }
   const syms = keepSyms && keepSyms.length ? keepSyms : DEFAULT_SYMS;
-  panes.forEach((p, i) => p.load(syms[i % syms.length]));
+  panes.forEach((p, i) => {
+    const e = syms[i % syms.length];
+    if (e && typeof e === 'object') { p.tf = e.t || tf; if (p.els.ctf) p.els.ctf.value = p.tf; p.load(e.s); }
+    else p.load(e || 'BTC');
+  });
   setActive(panes[0]);
   saveLayout();
 }
 function saveLayout() {
   try {
     localStorage.setItem('tvchart-layout', JSON.stringify({
-      n: panes.length, syms: panes.map(p => p.symbol).filter(Boolean), tf, currency
+      n: panes.length, syms: panes.map(p => ({ s: p.symbol, t: p.tf })).filter(x => x.s), tf, currency
     }));
   } catch (e) {}
 }
@@ -354,7 +381,7 @@ function analyzeActive() {
   if (!b) return;
   // 누적 신뢰도가 있으면 그것을 우선, 없으면 이번 분석 1위
   let best = b.cmp.best, basis = '이번 분석';
-  const roll = aggregateHistory(histFor(p.symbol, tf));
+  const roll = aggregateHistory(histFor(p.symbol, p.tf));
   const rq = roll.perf.find(x => STRAT_NAME[x.id] && x.runs >= 2);
   if (rq) { best = rq.id; basis = '누적 ' + rq.runs + '회 평균승률 ' + rq.avgWr.toFixed(1) + '%'; }
   if (best && best !== p.curStrategy) {
@@ -367,7 +394,7 @@ function analyzeActive() {
   $('briefTitle').textContent = b.label + ' 브리핑';
   $('briefTime').textContent = b.time + ' 기준 · 기본전략 ' + (STRAT_NAME[autoStrat] || autoStrat) + '(' + basis + ')';
   let h = b.lines.map(x => '<p class="bl">' + hl(x) + '</p>').join('');
-  const lastRun = histFor(p.symbol, tf).reduce((m, x) => Math.max(m, x.t || 0), 0);
+  const lastRun = histFor(p.symbol, p.tf).reduce((m, x) => Math.max(m, x.t || 0), 0);
   const next = lastRun ? new Date(lastRun + BT_MS) : null;
   const p2 = n => String(n).padStart(2, '0');
   h += '<p class="bl">4시간 신뢰도 추적 ' + (lastRun ? '· 다음 분석 ' + p2(next.getHours()) + ':' + p2(next.getMinutes()) : '· 첫 추적 대기 중') + '</p>';
@@ -459,11 +486,11 @@ async function scheduledBacktest() {
   const data = p.curData();
   if (data.length < 60) return;
   const cmp = compareStrategies(data);
-  btHist.push({ t: Date.now(), sym: p.symbol, tf, rows: cmp.rows.map(r => ({ id: r.id, trades: r.trades, winRate: r.winRate, totalReturn: r.totalReturn })) });
+  btHist.push({ t: Date.now(), sym: p.symbol, tf: p.tf, rows: cmp.rows.map(r => ({ id: r.id, trades: r.trades, winRate: r.winRate, totalReturn: r.totalReturn })) });
   try {
     const cands = [...p.active.keys()].filter(id => COMBO_IDS.includes(id));
     const g = greedyBundle(data, cands.length >= 2 ? cands : COMBO_IDS.slice(), 5);
-    btHist.push({ t: Date.now(), sym: p.symbol, tf, rows: [{ id: 'combo:' + g.bundle.slice().sort().join('+'), trades: g.stats.trades, winRate: g.stats.winRate, totalReturn: g.stats.totalReturn }] });
+    btHist.push({ t: Date.now(), sym: p.symbol, tf: p.tf, rows: [{ id: 'combo:' + g.bundle.slice().sort().join('+'), trades: g.stats.trades, winRate: g.stats.winRate, totalReturn: g.stats.totalReturn }] });
   } catch (e) {}
   btHist = btHist.slice(-BT_MAX);
   saveBt();
@@ -471,7 +498,7 @@ async function scheduledBacktest() {
 }
 function lastBtRun() {
   if (!activePane) return 0;
-  return histFor(activePane.symbol, tf).reduce((m, x) => Math.max(m, x.t || 0), 0);
+  return histFor(activePane.symbol, activePane.tf).reduce((m, x) => Math.max(m, x.t || 0), 0);
 }
 
 /* ---- 즐겨찾기·관심종목 ---- */
@@ -568,7 +595,7 @@ function init() {
   document.querySelectorAll('#tfs button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#tfs button').forEach(x => x.classList.remove('on'));
     b.classList.add('on'); tf = b.dataset.tf;
-    for (const p of panes) p.load(p.symbol || 'BTC');
+    for (const p of panes) p.setTF(tf);
   });
   document.querySelectorAll('#cur button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#cur button').forEach(x => x.classList.remove('on'));
@@ -579,7 +606,7 @@ function init() {
   document.querySelectorAll('#layoutSel button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#layoutSel button').forEach(x => x.classList.remove('on'));
     b.classList.add('on');
-    const syms = panes.map(p => p.symbol).filter(Boolean);
+    const syms = panes.map(p => ({ s: p.symbol, t: p.tf })).filter(x => x.s);
     buildLayout(parseInt(b.dataset.n, 10), syms);
   });
   ['tMA20', 'tMA50', 'tVol'].forEach(id => $(id).onchange = () => {
