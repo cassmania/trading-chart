@@ -11,16 +11,18 @@
   <div class="logo"><span class="logo-mark">◈</span> 트레이딩 챠트</div>
   <span id="liveDot" title="실시간 연결 상태">●</span>
   <div class="symbox">
-    <input id="symInput" value="AAPL" spellcheck="false" placeholder="심볼 (예: AAPL, 005930.KS)"/>
+    <input id="symInput" value="BTC" spellcheck="false" placeholder="심볼 (예: BTC, 005930.KS)"/>
     <button id="symGo" title="조회">조회</button>
     <button id="favBtn" title="즐겨찾기 추가/해제">☆</button>
   </div>
-  <div id="ohlc" class="ohlc"><span class="sym">AAPL</span><span class="sep">·</span><span id="o"></span><span id="h"></span><span id="l"></span><span id="c"></span><span id="chg"></span></div>
   <nav id="tfs">
     <button data-tf="m1">1분</button><button data-tf="m5">5분</button><button data-tf="m15">15분</button><button data-tf="D" class="on">1D</button><button data-tf="W">1W</button><button data-tf="M">1M</button>
   </nav>
   <nav id="cur">
     <button data-cur="USDT" class="on">USDT</button><button data-cur="KRW">KRW</button>
+  </nav>
+  <nav id="layoutSel" title="차트 개수">
+    <button data-n="1" class="on">1</button><button data-n="2">2</button><button data-n="3">3</button><button data-n="4">4</button><button data-n="6">6</button><button data-n="8">8</button>
   </nav>
   <div class="ind">
     <label><input type="checkbox" id="tMA20" checked/> MA20</label>
@@ -31,6 +33,7 @@
   <button id="autoBtn" class="on" title="클릭 지점 자동 추세/지지·저항선">자동선</button>
   <button id="helpBtn" title="추세선 의미 설명">?</button>
   <button id="themeBtn" title="라이트/다크 전환">🌙</button>
+  <button id="fsBtn" title="전체화면">⛶</button>
   <select id="stratSel" title="전략">
     <option value="">전략 선택</option>
     <option value="emaCross">EMA 크로스 9/21</option>
@@ -46,16 +49,10 @@
   <button id="stratGo" title="전략 실행">실행</button>
 </header>
 <div id="main">
-  <aside id="rail" title="그리기 도구 (데코)">
-    <button class="tool on" title="십자선">✛</button>
-    <button class="tool" title="추세선">／</button>
-    <button class="tool" title="수평선">―</button>
-    <button class="tool" title="피보나치">≋</button>
-    <button class="tool" title="텍스트">T</button>
-    <button class="tool" title="지우개">⌫</button>
-  </aside>
   <section id="center">
-    <div id="chart"></div>
+    <div id="grid" class="cols-1"></div>
+    <div id="chips"></div>
+    <footer id="status"><span id="stSrc">연결 중…</span><span id="stTime"></span><span id="stMsg">차트를 클릭하면 자동선이 그려집니다</span></footer>
     <div id="helpModal" class="hidden">
       <div class="help-card">
         <div class="help-head"><b>추세선·지지/저항선 읽기</b><button id="helpClose">✕</button></div>
@@ -70,18 +67,16 @@
         <p class="help-foot">선은 클릭 지점 기준 최근 120봉 스윙 고·저점으로 자동 계산됩니다. 눈금 오른쪽 끝 값으로 현재가를 확인하세요.</p>
       </div>
     </div>
-    <div id="panes"></div>
-    <div id="chips"></div>
-    <footer id="status"><span id="stSrc">연결 중…</span><span id="stTime"></span><span id="stMsg">십자선을 움직이면 OHLC가 표시됩니다</span></footer>
   </section>
   <aside id="watch">
     <h3>관심종목</h3>
     <div id="wl"></div>
-    <p class="note">클릭하면 차트가 바뀝니다.<br/>코인: BTC ETH XRP SOL ONDO (USDT 기본)<br/>주식: AAPL 005930.KS (심볼 직접 입력)</p>
+    <p class="note">클릭하면 활성 차트에 표시됩니다.<br/>코인: BTC ETH XRP SOL ONDO (USDT 기본)<br/>주식: AAPL 005930.KS (심볼 직접 입력)</p>
   </aside>
 </div>
 <script src="vendor/lightweight-charts.js"></script>
 <script src="indicators.js"></script>
+<script src="pane.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

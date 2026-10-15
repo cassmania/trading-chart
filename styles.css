@@ -38,6 +38,36 @@ body{background:var(--bg); color:var(--txt); font-family:"Segoe UI","맑은 고�
 #cur button{background:transparent; color:var(--dim); border:1px solid transparent; border-radius:6px; padding:5px 10px; cursor:pointer; font-weight:700}
 #cur button:hover{color:var(--txt); background:var(--panel2)}
 #cur button.on{color:#fff; background:#089981}
+#layoutSel{display:flex; gap:4px}
+#layoutSel button{background:transparent; color:var(--dim); border:1px solid transparent; border-radius:6px; padding:5px 9px; cursor:pointer; font-weight:700}
+#layoutSel button:hover{color:var(--txt); background:var(--panel2)}
+#layoutSel button.on{color:#fff; background:var(--accent)}
+#fsBtn{background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; white-space:nowrap}
+#fsBtn:hover{border-color:var(--accent)}
+#main:fullscreen{background:var(--bg); padding:6px}
+#grid{flex:1 1 auto; display:grid; gap:6px; min-height:0; min-width:0}
+#grid.cols-1{grid-template-columns:1fr; grid-template-rows:1fr}
+#grid.cols-2{grid-template-columns:1fr 1fr; grid-template-rows:1fr}
+#grid.cols-3{grid-template-columns:repeat(3,1fr); grid-template-rows:1fr}
+#grid.cols-4{grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr}
+#grid.cols-6{grid-template-columns:repeat(3,1fr); grid-template-rows:1fr 1fr}
+#grid.cols-8{grid-template-columns:repeat(4,1fr); grid-template-rows:1fr 1fr}
+.cell{display:flex; flex-direction:column; min-height:0; min-width:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--bg)}
+.cell.active{border-color:var(--accent)}
+.cellbar{display:flex; gap:6px; align-items:center; padding:4px 8px; background:var(--panel); font-size:12px; flex:0 0 auto}
+.cellbar .csym{background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:3px 6px; width:84px; text-transform:uppercase}
+.cellbar .cgo{background:var(--accent); color:#fff; border:none; border-radius:5px; padding:3px 9px; cursor:pointer; font-weight:700}
+.cellbar .cohlc{white-space:nowrap; overflow:hidden; color:var(--dim); font-variant-numeric:tabular-nums}
+.cellbar .cohlc .cs{color:var(--txt); font-weight:800}
+.cellbar .cohlc .cc{color:var(--txt); font-weight:700}
+.cellbar .cohlc .cg.up{color:var(--up)} .cellbar .cohlc .cg.down{color:var(--down)}
+.cchart{flex:1 1 auto; min-height:80px; position:relative}
+.cchart:focus{outline:1px solid var(--accent); outline-offset:-1px}
+.cpanes{flex:0 0 auto; max-height:38%; overflow-y:auto}
+.cpanes .subpane{border-top:1px solid var(--line)}
+.cpanes .subpane .ph{display:flex; justify-content:space-between; align-items:center; padding:2px 8px; font-size:11px; color:var(--dim); background:var(--panel)}
+.cpanes .subpane .ph button{background:none; border:none; color:var(--dim); cursor:pointer}
+.cpanes .subpane .pb{height:110px}
 .ind{display:flex; gap:12px; color:var(--dim); white-space:nowrap}
 .ind label{cursor:pointer; display:flex; gap:5px; align-items:center}
 .ind input{accent-color:var(--accent)}
