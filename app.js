@@ -294,10 +294,16 @@ function buildLayout(n, keepSyms) {
     const cell = document.createElement('div');
     cell.className = 'cell';
     cell.innerHTML = '<div class="cellbar"><input class="csym" spellcheck="false"/><button class="cgo">조회</button>'
-      + '<span class="cohlc"><b class="cs"></b> <span class="co"></span> <span class="ch"></span> <span class="cl"></span> <span class="cc"></span> <span class="cg"></span></span></div>'
+      + '<span class="cohlc"><b class="cs"></b> <span class="co"></span> <span class="ch"></span> <span class="cl"></span> <span class="cc"></span> <span class="cg"></span></span><button class="cfs" title="이 차트 전체화면">⛶</button></div>'
       + '<div class="cchart" tabindex="0"></div><div class="cpanes"></div><div id="autoleg"></div>';
     grid.appendChild(cell);
     const q = s => cell.querySelector(s);
+    q('.cfs').onclick = ev => {
+      ev.stopPropagation();
+      if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen().catch(() => {}); }
+      else if (cell.requestFullscreen) cell.requestFullscreen().catch(() => {});
+      else if (cell.webkitRequestFullscreen) cell.webkitRequestFullscreen();
+    };
     const els = {
       cell, box: q('.cchart'), panes: q('.cpanes'),
       symInput: q('.csym'), symGo: q('.cgo'),
