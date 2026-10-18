@@ -168,6 +168,8 @@ class ChartPane {
     this.curStrategy = null; this.syncing = false;
     this.tf = (typeof tf !== 'undefined' && tf) ? tf : 'D';
     this.liveWS = null; this.liveTimer = null; this.livePrev = null;
+    this.liveGeneration = 0; this.livePollController = null; this.livePollPending = false;
+    this.loadRequestId = 0; this.loadController = null;
     this.replay = null; this.lastClick = null;
     this.savedMarkers = null;
     this.chart = LightweightCharts.createChart(els.box, baseOpts());
@@ -244,44 +246,92 @@ class ChartPane {
     } else if (e.key === 'End') { try { ts.scrollToRealTime(); } catch (err) {} e.preventDefault(); }
     else if (e.key === 'Home') { ts.setVisibleLogicalRange({ from: 0, to: r.to - r.from }); e.preventDefault(); }
   }
+  clearData() {
+    this.stopReplay();
+    for (const id of [...this.active.keys()]) this.clearInd(id);
+    this.clearAuto();
+    this.markerLayers = {};
+    this.lastCombo = null;
+    this.curStrategy = null;
+    this.daily = [];
+    this.candle.setData([]); this.vol.setData([]); this.ma20.setData([]); this.ma50.setData([]);
+    this.refreshMarkers();
+    this.els.sym.textContent = this.symbol;
+    this.els.o.textContent = 'O —'; this.els.h.textContent = 'H —';
+    this.els.l.textContent = 'L —'; this.els.c.textContent = 'C —';
+    this.els.px.textContent = '—'; this.els.chg.textContent = '';
+  }
   async load(sym) {
-    this.symbol = sym.toUpperCase();
+    const requestId = ++this.loadRequestId;
+    if (this.loadController) this.loadController.abort();
+    const controller = new AbortController();
+    this.loadController = controller;
+    const signal = controller.signal;
+    this.stopLive();
+    this.symbol = String(sym || '').trim().toUpperCase();
+    const requestSymbol = this.symbol;
+    const requestTf = this.tf;
     if (this.els.symInput) this.els.symInput.value = this.symbol;
     this.msg(this.symbol + ' 로딩 중…');
     const plan = cryptoPlan(this.symbol);
     const base = cryptoBase(this.symbol);
     let done = false;
     for (const step of plan) {
-      if (this.isIntra() && step === 'stooq') continue;
+      if (signal.aborted || requestId !== this.loadRequestId) return;
       try {
         if (step === 'binance') {
-          const r = await tryBinance(base, this.tf);
+          const r = await tryBinance(base, requestTf, signal);
+          if (signal.aborted || requestId !== this.loadRequestId) return;
           this.daily = r.data; this.srcKind = 'binance'; this.srcQuote = r.market;
-          this.msg('실시간 데이터: 바이낸스 ' + r.market + ' (' + tfName(this.tf) + ')');
+          this.msg('실시간 데이터: 바이낸스 ' + r.market + ' (' + tfName(requestTf) + ')');
         } else if (step === 'mexc') {
-          const r = await tryMexc(base, this.tf);
+          const r = await tryMexc(base, requestTf, signal);
+          if (signal.aborted || requestId !== this.loadRequestId) return;
           this.daily = r.data; this.srcKind = 'mexc'; this.srcQuote = r.market;
-          this.msg('실시간 데이터: MEXC ' + r.market + ' (' + tfName(this.tf) + ')');
+          this.msg('실시간 데이터: MEXC ' + r.market + ' (' + tfName(requestTf) + ')');
         } else if (step === 'upbit') {
-          const u = this.isIntra() ? await tryUpbitIntra(this.symbol, INTRA[this.tf]) : await tryUpbit(this.symbol, this.tf);
+          const u = INTRA[requestTf]
+            ? await tryUpbitIntra(requestSymbol, INTRA[requestTf], undefined, signal)
+            : await tryUpbit(requestSymbol, requestTf, undefined, signal);
+          if (signal.aborted || requestId !== this.loadRequestId) return;
           this.daily = u.data; this.srcKind = 'upbit'; this.srcQuote = u.market;
-          this.msg('실시간 데이터: 업비트 ' + u.market + ' (' + tfName(this.tf) + ')');
+          this.msg('실시간 데이터: 업비트 ' + u.market + ' (' + tfName(requestTf) + ')');
         } else {
-          this.daily = await fetchStooq(this.symbol);
+          this.daily = await fetchStooq(requestSymbol, signal);
+          if (signal.aborted || requestId !== this.loadRequestId) return;
           this.srcKind = 'stooq'; this.srcQuote = '';
           this.msg('실시간 데이터: stooq.com (일봉)');
         }
         done = true;
         break;
-      } catch (e) {}
+      } catch (e) {
+        if (signal.aborted || requestId !== this.loadRequestId) return;
+      }
     }
+    if (signal.aborted || requestId !== this.loadRequestId || requestSymbol !== this.symbol || requestTf !== this.tf) return;
     if (!done) {
-      if (this.isIntra()) { this.msg('분봉은 코인만 지원 — ' + this.symbol + ' 불가'); return; }
+      if (INTRA[requestTf] && isDemoOnlySymbol(requestSymbol)) {
+        this.srcKind = 'demo'; this.srcQuote = '';
+        this.clearData();
+        this.msg('분봉은 코인만 지원 — ' + requestSymbol + ' 일봉을 선택하세요');
+        if (this.loadController === controller) this.loadController = null;
+        if (this.hooks.onSymbol) this.hooks.onSymbol(this);
+        return;
+      }
+      if (INTRA[requestTf]) {
+        this.srcKind = 'demo'; this.srcQuote = '';
+        this.clearData();
+        this.msg('분봉 데이터를 불러오지 못했습니다 — 다른 코인이나 시간봉을 선택하세요');
+        if (this.loadController === controller) this.loadController = null;
+        if (this.hooks.onSymbol) this.hooks.onSymbol(this);
+        return;
+      }
       this.daily = genDemo(this.symbol);
       this.srcKind = 'demo'; this.srcQuote = '';
-      this.msg('오프라인 데모 데이터 (시세 서버 접근 실패)');
+      this.msg(isDemoOnlySymbol(requestSymbol) ? '주식 예시 데이터 (데모 · 실시간 시세 미지원)' : '오프라인 데모 데이터 (시세 서버 접근 실패)');
     }
     this.render();
+    if (this.loadController === controller) this.loadController = null;
     if (this.hooks.onSymbol) this.hooks.onSymbol(this);
   }
   msg(t) { if (this.hooks.onMsg) this.hooks.onMsg(this, t); }
@@ -306,7 +356,8 @@ class ChartPane {
     this.chart.timeScale().fitContent();
     this.msg('st:' + '봉 ' + data.length + '개 · ' + fmtT(data[0].time) + ' ~ ' + fmtT(last.time) + ' · Vol ' + fmtV(last.volume));
     this.reapplyAll();
-    this.startLive();
+    // 비활성 차트는 스트림을 열지 않아 다중 차트의 네트워크 연결과 CPU 사용을 줄입니다.
+    if (this === activePane) this.startLive();
   }
   stepSec() {
     const data = this.curData();
@@ -578,13 +629,19 @@ class ChartPane {
     this.refreshMarkers();
   }
   stopLive() {
+    const wasLive = Boolean(this.liveWS || this.liveTimer);
+    this.liveGeneration += 1;
     if (this.liveWS) { try { this.liveWS.close(); } catch (e) {} this.liveWS = null; }
     if (this.liveTimer) { clearInterval(this.liveTimer); this.liveTimer = null; }
+    if (this.livePollController) { this.livePollController.abort(); this.livePollController = null; }
+    this.livePollPending = false;
+    if (wasLive && this.hooks.onLive) this.hooks.onLive(this, false);
   }
   startLive() {
     this.stopLive();
     if (!this.daily.length || this.srcKind === 'demo' || this.srcKind === 'stooq') return false;
     const base = cryptoBase(this.symbol);
+    const generation = this.liveGeneration;
     this.livePrev = this.daily.length > 1 ? this.daily[this.daily.length - 2].close : this.daily[this.daily.length - 1].close;
     const isUSDT = this.srcKind === 'binance' || this.srcKind === 'mexc' || (this.srcKind === 'upbit' && this.srcQuote.startsWith('USDT'));
     if (isUSDT && typeof WebSocket !== 'undefined') {
@@ -592,10 +649,11 @@ class ChartPane {
         const ws = new WebSocket('wss://stream.binance.com:9443/ws/' + base.toLowerCase() + 'usdt@miniTicker');
         this.liveWS = ws;
         const self = this;
-        ws.onopen = () => { if (self.hooks.onLive) self.hooks.onLive(self, true); };
-        ws.onclose = () => { if (self.liveWS === ws) { self.liveWS = null; if (self.hooks.onLive) self.hooks.onLive(self, false); self.startLivePoll(); } };
+        ws.onopen = () => { if (self.liveWS === ws && self.liveGeneration === generation && self.hooks.onLive) self.hooks.onLive(self, true); };
+        ws.onclose = () => { if (self.liveWS === ws && self.liveGeneration === generation) { self.liveWS = null; if (self.hooks.onLive) self.hooks.onLive(self, false); self.startLivePoll(); } };
         ws.onerror = () => { try { ws.close(); } catch (e) {} };
         ws.onmessage = ev => {
+          if (self.liveWS !== ws || self.liveGeneration !== generation) return;
           try {
             const m = JSON.parse(ev.data);
             const t = { price: +m.c, open: +m.o, high: +m.h, low: +m.l, vol: +m.v };
@@ -612,22 +670,36 @@ class ChartPane {
   startLivePoll() {
     if (this.liveTimer) return;
     const self = this;
+    const generation = this.liveGeneration;
     if (self.hooks.onLive) self.hooks.onLive(self, true);
     const poll = async () => {
+      if (self.livePollPending || generation !== self.liveGeneration) return;
+      self.livePollPending = true;
+      const controller = new AbortController();
+      self.livePollController = controller;
       try {
         let t = null;
         if (self.srcKind === 'upbit' && self.srcQuote) {
-          const r = await fetch('https://api.upbit.com/v1/ticker?markets=' + self.srcQuote);
+          const r = await fetch('https://api.upbit.com/v1/ticker?markets=' + encodeURIComponent(self.srcQuote), { signal: controller.signal, cache: 'no-store' });
+          if (!r.ok) throw new Error('upbit ticker ' + r.status);
           const j = await r.json();
           if (j && j[0]) t = { price: j[0].trade_price, open: j[0].opening_price, high: j[0].high_price, low: j[0].low_price, vol: 0 };
         } else {
           const base = cryptoBase(self.symbol);
-          const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + base + 'USDT');
+          const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + base + 'USDT', { signal: controller.signal, cache: 'no-store' });
+          if (!r.ok) throw new Error('binance ticker ' + r.status);
           const j = await r.json();
           if (j && j.lastPrice) t = { price: +j.lastPrice, open: +j.openPrice, high: +j.highPrice, low: +j.lowPrice, vol: 0 };
         }
-        if (t && isFinite(t.price) && t.price > 0) self.onLiveTick(t);
-      } catch (e) {}
+        if (generation === self.liveGeneration && t && isFinite(t.price) && t.price > 0) self.onLiveTick(t);
+      } catch (e) {
+        if (e.name !== 'AbortError') { /* 다음 주기에서 시세 조회를 다시 시도합니다. */ }
+      } finally {
+        if (generation === self.liveGeneration) {
+          self.livePollPending = false;
+          if (self.livePollController === controller) self.livePollController = null;
+        }
+      }
     };
     poll();
     this.liveTimer = setInterval(poll, 5000);
@@ -663,6 +735,8 @@ class ChartPane {
     if (this.hooks.onTick) this.hooks.onTick(this, t.price);
   }
   destroy() {
+    this.loadRequestId += 1;
+    if (this.loadController) { this.loadController.abort(); this.loadController = null; }
     this.stopLive();
     for (const p of this.subCharts) { try { p.chart.remove(); } catch (e) {} }
     this.subCharts = [];

@@ -8,6 +8,8 @@ try { favs = JSON.parse(localStorage.getItem('tvchart-fav') || '[]'); if (!Array
 function saveFavs() { try { localStorage.setItem('tvchart-fav', JSON.stringify(favs)); } catch (e) {} }
 
 const WATCH = ['BTC', 'ETH', 'XRP', 'SOL', 'ONDO', 'AAPL', '005930.KS'];
+// 현재 정적 사이트에서는 주식 시세 API를 제공하지 않으므로 예시 주식은 데모로 표시합니다.
+const DEMO_ONLY_SYMBOLS = new Set(['AAPL', '005930.KS']);
 const INTRA = { m1: 1, m5: 5, m15: 15, m30: 30, h1: 60, h4: 240, h12: 'H12' };
 const BINV = { D: '1d', W: '1w', M: '1M', m1: '1m', m5: '5m', m15: '15m', m30: '30m', h1: '1h', h4: '4h', h12: '12h' };
 const UPBIT_MIN = { m1: 1, m5: 5, m15: 15, m30: 30, h1: 60, h4: 240 };
@@ -89,10 +91,10 @@ function upbitMarket(sym, quote) {
   if (u.endsWith('USDT')) return 'USDT-' + u.slice(0, -4);
   return (quote || currency) + '-' + u;
 }
-async function tryUpbit(sym, tf, quote) {
+async function tryUpbit(sym, tf, quote, signal) {
   const market = upbitMarket(sym, quote);
   const unit = tf === 'W' ? 'weeks' : tf === 'M' ? 'months' : 'days';
-  const r = await fetch('https://api.upbit.com/v1/candles/' + unit + '?market=' + market + '&count=200');
+  const r = await fetch('https://api.upbit.com/v1/candles/' + unit + '?market=' + market + '&count=200', { signal, cache: 'no-store' });
   if (!r.ok) throw new Error('upbit ' + r.status);
   const j = await r.json();
   if (!Array.isArray(j) || j.length < 10) throw new Error('upbit empty');
@@ -105,13 +107,57 @@ async function tryUpbit(sym, tf, quote) {
     }))
   };
 }
-async function tryUpbitIntra(sym, unit, quote) {
+async function tryBinanceTicker(base) {
+  const symbol = base.toUpperCase() + 'USDT';
+  const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + encodeURIComponent(symbol), { cache: 'no-store' });
+  if (!r.ok) throw new Error('binance ticker ' + r.status);
+  const j = await r.json();
+  const last = Number(j.lastPrice), previous = Number(j.prevClosePrice);
+  if (!Number.isFinite(last) || !Number.isFinite(previous) || last <= 0 || previous <= 0) throw new Error('binance ticker invalid');
+  return [last, previous, true];
+}
+async function tryBinanceTickers(bases) {
+  const symbols = [...new Set(bases.map(base => base.toUpperCase() + 'USDT'))];
+  if (!symbols.length) return new Map();
+  const url = 'https://api.binance.com/api/v3/ticker/24hr?symbols=' + encodeURIComponent(JSON.stringify(symbols));
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error('binance ticker batch ' + r.status);
+  const rows = await r.json();
+  if (!Array.isArray(rows)) throw new Error('binance ticker batch invalid');
+  const quotes = new Map();
+  for (const item of rows) {
+    const last = Number(item.lastPrice), previous = Number(item.prevClosePrice);
+    if (Number.isFinite(last) && Number.isFinite(previous) && last > 0 && previous > 0) {
+      quotes.set(item.symbol, [last, previous, true]);
+    }
+  }
+  return quotes;
+}
+async function tryMexcTicker(base) {
+  const symbol = base.toUpperCase() + 'USDT';
+  const r = await fetch('https://api.mexc.com/api/v3/ticker/24hr?symbol=' + encodeURIComponent(symbol), { cache: 'no-store' });
+  if (!r.ok) throw new Error('mexc ticker ' + r.status);
+  const j = await r.json();
+  const last = Number(j.lastPrice), previous = Number(j.prevClosePrice);
+  if (!Number.isFinite(last) || !Number.isFinite(previous) || last <= 0 || previous <= 0) throw new Error('mexc ticker invalid');
+  return [last, previous, true];
+}
+async function tryUpbitTicker(sym, quote) {
+  const market = upbitMarket(sym, quote);
+  const r = await fetch('https://api.upbit.com/v1/ticker?markets=' + encodeURIComponent(market), { cache: 'no-store' });
+  if (!r.ok) throw new Error('upbit ticker ' + r.status);
+  const j = await r.json();
+  const last = Number(j?.[0]?.trade_price), previous = Number(j?.[0]?.prev_closing_price);
+  if (!Number.isFinite(last) || !Number.isFinite(previous) || last <= 0 || previous <= 0) throw new Error('upbit ticker invalid');
+  return [last, previous, true];
+}
+async function tryUpbitIntra(sym, unit, quote, signal) {
   const market = upbitMarket(sym, quote);
   if (unit === 'h12') {
-    const r = await tryUpbitIntra(sym, 240, quote);
+    const r = await tryUpbitIntra(sym, 240, quote, signal);
     return { market: r.market, data: resampleIntra(r.data, 12 * 3600) };
   }
-  const r = await fetch('https://api.upbit.com/v1/candles/minutes/' + unit + '?market=' + market + '&count=200');
+  const r = await fetch('https://api.upbit.com/v1/candles/minutes/' + unit + '?market=' + market + '&count=200', { signal, cache: 'no-store' });
   if (!r.ok) throw new Error('upbit ' + r.status);
   const j = await r.json();
   if (!Array.isArray(j) || j.length < 10) throw new Error('upbit empty');
@@ -124,9 +170,9 @@ async function tryUpbitIntra(sym, unit, quote) {
     }))
   };
 }
-async function fetchStooq(sym) {
+async function fetchStooq(sym, signal) {
   const url = 'https://stooq.com/q/d/l/?s=' + encodeURIComponent(sym.toLowerCase()) + '&i=d';
-  const r = await fetch(url);
+  const r = await fetch(url, { signal, cache: 'no-store' });
   if (!r.ok) throw new Error('http ' + r.status);
   const t = await r.text();
   if (t.trim().startsWith('<')) throw new Error('blocked');
@@ -141,8 +187,8 @@ async function fetchStooq(sym) {
   if (out.length < 30) throw new Error('too few rows');
   return out;
 }
-async function fetchKlines(url) {
-  const r = await fetch(url);
+async function fetchKlines(url, signal) {
+  const r = await fetch(url, { signal, cache: 'no-store' });
   if (!r.ok) throw new Error('klines ' + r.status);
   const j = await r.json();
   if (!Array.isArray(j) || j.length < 10) throw new Error('klines empty');
@@ -151,12 +197,12 @@ async function fetchKlines(url) {
     open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5]
   })).sort((a, b) => a.time - b.time);
 }
-async function tryBinance(base, tf) {
-  const data = await fetchKlines('https://api.binance.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200');
+async function tryBinance(base, tf, signal) {
+  const data = await fetchKlines('https://api.binance.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200', signal);
   return { market: base + '/USDT', exch: '바이낸스', data };
 }
-async function tryMexc(base, tf) {
-  const data = await fetchKlines('https://api.mexc.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200');
+async function tryMexc(base, tf, signal) {
+  const data = await fetchKlines('https://api.mexc.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200', signal);
   return { market: base + '/USDT', exch: 'MEXC', data };
 }
 function cryptoBase(sym) {
@@ -166,23 +212,29 @@ function cryptoBase(sym) {
   return u;
 }
 function cryptoPlan(sym) {
+  if (isDemoOnlySymbol(sym)) return [];
   const u = sym.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (u.endsWith('KRW')) return ['upbit', 'stooq'];
-  if (u.endsWith('USDT')) return ['binance', 'mexc', 'upbit', 'stooq'];
-  if (currency === 'KRW') return ['upbit', 'stooq'];
-  return ['binance', 'mexc', 'upbit', 'stooq'];
+  if (u.endsWith('KRW')) return ['upbit'];
+  if (u.endsWith('USDT')) return ['binance', 'mexc', 'upbit'];
+  if (currency === 'KRW') return ['upbit'];
+  return ['binance', 'mexc', 'upbit'];
+}
+function isDemoOnlySymbol(sym) {
+  const normalized = String(sym || '').trim().toUpperCase();
+  return DEMO_ONLY_SYMBOLS.has(normalized) || /^\d{6}\.KS$/.test(normalized);
 }
 async function lastClose(s) {
+  if (isDemoOnlySymbol(s)) {
+    const data = genDemo(s);
+    return [data[data.length - 1].close, data[data.length - 2].close, false];
+  }
   const plan = cryptoPlan(s);
   const base = cryptoBase(s);
   for (const step of plan) {
     try {
-      let d;
-      if (step === 'binance') d = (await tryBinance(base, 'D')).data;
-      else if (step === 'mexc') d = (await tryMexc(base, 'D')).data;
-      else if (step === 'upbit') d = (await tryUpbit(s, 'D')).data;
-      else d = await fetchStooq(s);
-      return [d[d.length - 1].close, d[d.length - 2].close, true];
+      if (step === 'binance') return await tryBinanceTicker(base);
+      if (step === 'mexc') return await tryMexcTicker(base);
+      if (step === 'upbit') return await tryUpbitTicker(s, currency);
     } catch (e) {}
   }
   const d = genDemo(s);
@@ -341,7 +393,11 @@ function buildLayout(n, keepSyms) {
         if (p !== activePane) return;
         try { document.title = fmtPx(price) + ' · ' + p.label() + ' — 트레이딩 챠트'; } catch (e) {}
       },
-      onSymbol: () => { updateFavBtn(); analyzeActive(); saveLayout(); }
+      onSymbol: p => {
+        // 비활성 패널이 로드될 때 현재 선택된 차트의 무거운 분석을 중복 실행하지 않습니다.
+        if (p === activePane) { updateFavBtn(); analyzeActive(); }
+        saveLayout();
+      }
     });
     cell.addEventListener('mousedown', () => { if (pane !== activePane) setActive(pane); });
     els.ctf.value = pane.tf;
@@ -372,7 +428,13 @@ function routeMsg(t) {
 }
 function analyzeActive() {
   const p = activePane;
-  if (!p || !p.daily.length) return;
+  if (!p) return;
+  if (!p.daily.length) {
+    $('briefTitle').textContent = '차트 브리핑';
+    $('briefTime').textContent = '';
+    $('briefBody').innerHTML = '<p class="brief-empty">분석할 차트 데이터가 없습니다</p>';
+    return;
+  }
   const data = p.curData();
   if (data.length < 60) {
     $('briefBody').innerHTML = '<p class="brief-empty">봉이 60개 미만이라 분석 생략</p>';
@@ -530,11 +592,35 @@ function toggleFav() {
 }
 async function refreshWatch() {
   const box = $('wl');
+  const refreshId = (refreshWatch.requestId || 0) + 1;
+  refreshWatch.requestId = refreshId;
   box.innerHTML = '';
-  const drawRow = async (s, isFavRow) => {
-    let last = NaN, prev = NaN, live = false;
-    try { [last, prev, live] = await lastClose(s); }
-    catch (e) { const d = genDemo(s); last = d[d.length - 1].close; prev = d[d.length - 2].close; }
+  const symbols = [...new Set([...favs, ...WATCH])];
+  const quotes = new Map();
+  const bases = [...new Set(symbols.filter(s => !isDemoOnlySymbol(s) && !s.toUpperCase().endsWith('KRW')).map(cryptoBase))];
+  if (currency !== 'KRW' && bases.length) {
+    // 거래소의 묶음 조회 한도보다 작게 나눠 즐겨찾기가 많아도 요청이 실패하지 않게 합니다.
+    for (let offset = 0; offset < bases.length; offset += 20) {
+      try {
+        const batch = await tryBinanceTickers(bases.slice(offset, offset + 20));
+        for (const s of symbols) {
+          const quote = batch.get(cryptoBase(s) + 'USDT');
+          if (quote) quotes.set(s, quote);
+        }
+      } catch (e) { /* 조회되지 않은 심볼은 아래에서 가능한 거래소로 보완합니다. */ }
+      }
+  }
+  await Promise.all(symbols.filter(s => !quotes.has(s)).map(async s => {
+    try { quotes.set(s, await lastClose(s)); }
+    catch (e) {
+      const d = genDemo(s);
+      quotes.set(s, [d[d.length - 1].close, d[d.length - 2].close, false]);
+    }
+  }));
+  if (refreshWatch.requestId !== refreshId) return;
+
+  const drawRow = (s, isFavRow) => {
+    const [last, prev, live] = quotes.get(s) || [NaN, NaN, false];
     const ch = prev ? (last - prev) / prev * 100 : 0;
     const row = document.createElement('div');
     row.className = 'wlrow' + (activePane && s === activePane.symbol ? ' on' : '') + (isFavRow ? ' fav' : '');
@@ -552,21 +638,18 @@ async function refreshWatch() {
       row.appendChild(x);
     }
     row.onclick = () => { if (activePane) activePane.load(s); };
-    box.appendChild(row);
+    return row;
   };
   if (favs.length) {
     const h = document.createElement('div');
     h.className = 'wlsec'; h.textContent = '★ 즐겨찾기';
     box.appendChild(h);
-    for (const s of favs) await drawRow(s, true);
+    favs.map(s => drawRow(s, true)).forEach(row => box.appendChild(row));
     const h2 = document.createElement('div');
     h2.className = 'wlsec'; h2.textContent = '기본 목록';
     box.appendChild(h2);
   }
-  for (const s of WATCH) {
-    if (favs.includes(s)) continue;
-    await drawRow(s, false);
-  }
+  WATCH.filter(s => !favs.includes(s)).map(s => drawRow(s, false)).forEach(row => box.appendChild(row));
 }
 
 /* ---- 테마·전체화면 ---- */
