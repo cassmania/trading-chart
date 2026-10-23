@@ -7,30 +7,49 @@ const TP = a => a.map(b => (b.high + b.low + b.close) / 3);
 const MED = a => a.map(b => (b.high + b.low) / 2);
 
 function emaArr(v, n) {
-  const k = 2 / (n + 1), out = new Array(v.length).fill(null);
-  let e = 0;
+  const len = Math.max(1, Math.floor(n)), k = 2 / (len + 1);
+  const out = new Array(v.length).fill(null);
+  let seed = 0, seedCount = 0, e = null;
   for (let i = 0; i < v.length; i++) {
-    e = i === 0 ? v[0] : v[i] * k + e * (1 - k);
-    if (i >= n - 1) out[i] = e;
+    const x = v[i] === null || v[i] === undefined ? NaN : Number(v[i]);
+    if (!Number.isFinite(x)) { seed = 0; seedCount = 0; e = null; continue; }
+    if (e === null) {
+      seed += x; seedCount++;
+      if (seedCount === len) { e = seed / len; out[i] = e; }
+      continue;
+    }
+    e = x * k + e * (1 - k);
+    out[i] = e;
   }
   return out;
 }
 function smaArr(v, n) {
   const out = new Array(v.length).fill(null);
-  let s = 0;
+  const len = Math.max(1, Math.floor(n));
+  let s = 0, q = [];
   for (let i = 0; i < v.length; i++) {
-    s += v[i];
-    if (i >= n) s -= v[i - n];
-    if (i >= n - 1) out[i] = s / n;
+    const x = v[i] === null || v[i] === undefined ? NaN : Number(v[i]);
+    if (!Number.isFinite(x)) { s = 0; q = []; continue; }
+    q.push(x); s += x;
+    if (q.length > len) s -= q.shift();
+    if (q.length === len) out[i] = s / len;
   }
   return out;
 }
 function rmaArr(v, n) {  // Wilder
   const out = new Array(v.length).fill(null);
-  let e = NaN;
+  const len = Math.max(1, Math.floor(n));
+  let seed = 0, seedCount = 0, e = null;
   for (let i = 0; i < v.length; i++) {
-    e = isNaN(e) ? v[i] : (e * (n - 1) + v[i]) / n;
-    if (i >= n - 1) out[i] = e;
+    const x = v[i] === null || v[i] === undefined ? NaN : Number(v[i]);
+    if (!Number.isFinite(x)) { seed = 0; seedCount = 0; e = null; continue; }
+    if (e === null) {
+      seed += x; seedCount++;
+      if (seedCount === len) { e = seed / len; out[i] = e; }
+      continue;
+    }
+    e = (e * (len - 1) + x) / len;
+    out[i] = e;
   }
   return out;
 }
@@ -104,8 +123,16 @@ function RSI(d, n = 14) {
   let g = 0, l = 0;
   for (let i = 1; i < c.length; i++) {
     const ch = c[i] - c[i - 1], up = Math.max(ch, 0), dn = Math.max(-ch, 0);
-    if (i <= n) { g += up; l += dn; if (i === n) { g /= n; l /= n; out[i] = cl01(l === 0 ? 100 : 100 - 100 / (1 + g / l)); } }
-    else { g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n; out[i] = cl01(l === 0 ? 100 : 100 - 100 / (1 + g / l)); }
+    if (i <= n) {
+      g += up; l += dn;
+      if (i === n) {
+        g /= n; l /= n;
+        out[i] = cl01(g === 0 && l === 0 ? 50 : l === 0 ? 100 : 100 - 100 / (1 + g / l));
+      }
+    } else {
+      g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n;
+      out[i] = cl01(g === 0 && l === 0 ? 50 : l === 0 ? 100 : 100 - 100 / (1 + g / l));
+    }
   }
   return out;
 }
@@ -116,8 +143,8 @@ function Stoch(d, k = 14, sk = 3, sd = 3) {
     const hh = Math.max(...h.slice(i - k + 1, i + 1)), ll = Math.min(...l.slice(i - k + 1, i + 1));
     return hh === ll ? 50 : 100 * (c[i] - ll) / (hh - ll);
   });
-  const K = smaArr(raw.map(x => x ?? 50), sk).map((x, i) => raw[i] === null ? null : cl01(x));
-  const D = smaArr(K.map(x => x ?? 50), sd).map((x, i) => K[i] === null ? null : cl01(x));
+  const K = smaArr(raw, sk).map((x, i) => raw[i] === null ? null : cl01(x));
+  const D = smaArr(K, sd).map((x, i) => K[i] === null ? null : cl01(x));
   return { K, D };
 }
 function StochRSI(d, rsiLen = 14, stLen = 14, k = 3, sd = 3) {
@@ -128,24 +155,27 @@ function StochRSI(d, rsiLen = 14, stLen = 14, k = 3, sd = 3) {
     const hh = Math.max(...w), ll = Math.min(...w);
     return hh === ll ? 50 : 100 * (v - ll) / (hh - ll);
   });
-  const K = smaArr(raw.map(x => x ?? 50), k).map((x, i) => raw[i] === null ? null : cl01(x));
-  const D = smaArr(K.map(x => x ?? 50), sd).map((x, i) => K[i] === null ? null : cl01(x));
+  const K = smaArr(raw, k).map((x, i) => raw[i] === null ? null : cl01(x));
+  const D = smaArr(K, sd).map((x, i) => K[i] === null ? null : cl01(x));
   return { K, D };
 }
 function ConnorsRSI(d, rsiLen = 3, streakLen = 2, pctLen = 100) {
   const c = C(d), r = RSI(d, rsiLen), out = new Array(c.length).fill(null);
+  const streaks = new Array(c.length).fill(0);
   let streak = 0;
   for (let i = 1; i < c.length; i++) {
     const ch = c[i] - c[i - 1];
     streak = ch > 0 ? (streak >= 0 ? streak + 1 : 1) : ch < 0 ? (streak <= 0 ? streak - 1 : -1) : streak;
-    const rs = RSI(Array.from({ length: Math.min(i + 1, 200) }, (_, k) => ({ close: streak })), streakLen);
-    const streakRSI = 100 - 100 / (1 + Math.max(0, streak) / Math.max(1, -Math.min(0, streak)) || 1);
+    streaks[i] = streak;
+  }
+  const streakRsi = RSI(streaks.map(x => ({ close: x })), streakLen);
+  for (let i = 1; i < c.length; i++) {
     const from = Math.max(1, i - pctLen + 1);
     const rocs = [];
     for (let j = from; j <= i; j++) rocs.push((c[j] - c[j - 1]) / c[j - 1]);
     const cur = rocs[rocs.length - 1];
     const rank = 100 * rocs.filter(x => x < cur).length / rocs.length;
-    if (r[i] !== null) out[i] = cl01((r[i] + Math.min(100, Math.max(0, 50 + streak * 5)) + rank) / 3);
+    if (r[i] !== null && streakRsi[i] !== null) out[i] = cl01((r[i] + streakRsi[i] + rank) / 3);
   }
   return out;
 }
@@ -201,10 +231,10 @@ function CMO(d, n = 9) {
 }
 function TSI(d, long = 25, short = 13, sig = 13) {
   const c = C(d), m = c.map((v, i) => i === 0 ? 0 : v - c[i - 1]);
-  const e1 = emaArr(m, long), e2 = emaArr(e1.map(x => x ?? 0), short);
-  const a1 = emaArr(m.map(Math.abs), long), a2 = emaArr(a1.map(x => x ?? 0), short);
+  const e1 = emaArr(m, long), e2 = emaArr(e1, short);
+  const a1 = emaArr(m.map(Math.abs), long), a2 = emaArr(a1, short);
   const tsi = e2.map((v, i) => (v === null || !a2[i]) ? null : 100 * v / a2[i]);
-  const s = emaArr(tsi.map(x => x ?? 0), sig).map((x, i) => tsi[i] === null ? null : x);
+  const s = emaArr(tsi, sig).map((x, i) => tsi[i] === null ? null : x);
   return { tsi, signal: s };
 }
 function UO(d, n1 = 7, n2 = 14, n3 = 28) {
@@ -245,7 +275,7 @@ function RVI(d, n = 10) {  // Relative Vigor Index
   const co = d.map(b => b.close - b.open), hl = d.map(b => b.high - b.low);
   const a = smaArr(co, n), b = smaArr(hl.map(x => x === 0 ? 1e-9 : x), n);
   const rvi = a.map((v, i) => (v === null || b[i] === null) ? null : v / b[i]);
-  const s = smaArr(rvi.map(x => x ?? 0), 4).map((x, i) => rvi[i] === null ? null : x);
+  const s = smaArr(rvi, 4).map((x, i) => rvi[i] === null ? null : x);
   return { rvi, signal: s };
 }
 function RelVolIndex(d, n = 10) {
@@ -315,8 +345,9 @@ function Klinger(d, short = 34, long = 55, sig = 13) {
   const tp = TP(d), v = V(d);
   const trend = tp.map((x, i) => i === 0 ? 1 : x > tp[i - 1] ? 1 : -1);
   const vf = trend.map((t, i) => v[i] * t);
-  const k = emaArr(vf, short).map((x, i) => { const y = emaArr(vf, long)[i]; return (x === null || y === null) ? null : x - y; });
-  const s = emaArr(k.map(x => x ?? 0), sig).map((x, i) => k[i] === null ? null : x);
+  const shortEma = emaArr(vf, short), longEma = emaArr(vf, long);
+  const k = shortEma.map((x, i) => (x === null || longEma[i] === null) ? null : x - longEma[i]);
+  const s = emaArr(k, sig).map((x, i) => k[i] === null ? null : x);
   return { k, signal: s };
 }
 function PVT(d) {
@@ -402,9 +433,9 @@ function Vortex(d, n = 14) {
 }
 function KST(d, r1 = 10, r2 = 15, r3 = 20, r4 = 30, a1 = 10, a2 = 10, a3 = 10, a4 = 15, sig = 9) {
   const c = C(d);
-  const roc = n => c.map((v, i) => i < n ? 0 : (v - c[i - n]) / c[i - n]);
-  const k = roc(r1).map((v, i) => v + 0 * i);
-  const sum = k.map((_, i) => smaArr(roc(r1), a1)[i] * 1 + smaArr(roc(r2), a2)[i] * 2 + smaArr(roc(r3), a3)[i] * 3 + smaArr(roc(r4), a4)[i] * 4);
+  const roc = n => c.map((v, i) => i < n ? null : (v - c[i - n]) / c[i - n]);
+  const r1v = smaArr(roc(r1), a1), r2v = smaArr(roc(r2), a2), r3v = smaArr(roc(r3), a3), r4v = smaArr(roc(r4), a4);
+  const sum = c.map((_, i) => [r1v[i], r2v[i], r3v[i], r4v[i]].some(x => x === null) ? null : r1v[i] + 2 * r2v[i] + 3 * r3v[i] + 4 * r4v[i]);
   const s = smaArr(sum, sig);
   return { kst: sum, signal: s };
 }
@@ -412,7 +443,7 @@ function MACD(d, f = 12, s = 26, sig = 9) {
   const c = C(d);
   const ef = emaArr(c, f), es = emaArr(c, s);
   const m = ef.map((v, i) => (v === null || es[i] === null) ? null : v - es[i]);
-  const g = emaArr(m.map(x => x ?? 0), sig).map((x, i) => m[i] === null ? null : x);
+  const g = emaArr(m, sig).map((x, i) => m[i] === null ? null : x);
   const h = m.map((v, i) => (v === null || g[i] === null) ? null : v - g[i]);
   return { macd: m, signal: g, hist: h };
 }
@@ -790,37 +821,108 @@ function sigCross(a, b) {
   }
   return out;
 }
-function backtest(d, sig) {
-  const c = C(d);
-  let pos = null, wins = 0, n = 0, eq = 1;
-  for (let i = 0; i < d.length; i++) {
-    if (sig[i] === 'BUY' && pos === null) pos = c[i];
-    else if (sig[i] === 'SELL' && pos !== null) {
-      const r = c[i] / pos;
-      eq *= r; n++;
-      if (r > 1) wins++;
-      pos = null;
+const BACKTEST_DEFAULTS = Object.freeze({ entryDelay: 1, feeBps: 5, slippageBps: 5 });
+function backtest(d, sig, options = BACKTEST_DEFAULTS) {
+  const delay = Math.max(1, Math.floor(Number(options.entryDelay) || 1));
+  const fee = Math.max(0, Number(options.feeBps) || 0) / 10000;
+  const slip = Math.max(0, Number(options.slippageBps) || 0) / 10000;
+  const requestedStart = Number(options.startIndex);
+  const requestedEnd = Number(options.endIndex);
+  const start = Number.isFinite(requestedStart) ? Math.max(0, Math.floor(requestedStart)) : 0;
+  const end = Number.isFinite(requestedEnd) ? Math.min(d.length - 1, Math.floor(requestedEnd)) : d.length - 1;
+  let entry = null, wins = 0, n = 0, eq = 1, peak = 1, maxDrawdown = 0;
+  let grossProfit = 0, grossLoss = 0;
+  const closeTrade = exit => {
+    if (entry === null || !Number.isFinite(exit) || exit <= 0) return;
+    const r = exit / entry;
+    eq *= r; n++;
+    if (r > 1) { wins++; grossProfit += r - 1; }
+    else grossLoss += 1 - r;
+    peak = Math.max(peak, eq);
+    maxDrawdown = Math.max(maxDrawdown, peak ? (peak - eq) / peak * 100 : 0);
+    entry = null;
+  };
+  for (let i = Math.max(delay, start); i <= end; i++) {
+    const signal = sig[i - delay];
+    if (signal === 'BUY' && entry === null) {
+      const open = Number(d[i].open);
+      if (Number.isFinite(open) && open > 0) entry = open * (1 + slip) * (1 + fee);
+    } else if (signal === 'SELL' && entry !== null) {
+      const open = Number(d[i].open);
+      if (Number.isFinite(open) && open > 0) closeTrade(open * (1 - slip) * (1 - fee));
     }
   }
-  if (pos !== null && c.length) { const r = c[c.length - 1] / pos; eq *= r; n++; if (r > 1) wins++; }
-  return { trades: n, winRate: n ? 100 * wins / n : 0, totalReturn: (eq - 1) * 100 };
+  if (entry !== null && end >= start && d.length) {
+    const close = Number(d[end].close);
+    if (Number.isFinite(close) && close > 0) closeTrade(close * (1 - slip) * (1 - fee));
+  }
+  return {
+    trades: n,
+    winRate: n ? 100 * wins / n : 0,
+    totalReturn: (eq - 1) * 100,
+    maxDrawdown,
+    profitFactor: grossLoss ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0
+  };
 }
-function compareStrategies(d) {
+function compareStrategies(d, options = BACKTEST_DEFAULTS) {
   // 정확도(승률) 우선, 거래 3회 미만은 감점. 동점은 수익률로 결정
   const rows = [];
   for (const [id, fn] of Object.entries(Strat)) {
     const sig = fn(d);
-    const bt = backtest(d, sig);
+    const bt = backtest(d, sig, options);
     let lastSig = null, barsAgo = -1;
     for (let i = sig.length - 1; i >= 0; i--) {
       if (sig[i] !== null) { lastSig = sig[i]; barsAgo = sig.length - 1 - i; break; }
     }
     const eligible = bt.trades >= 3;
     const score = (eligible ? bt.winRate : bt.winRate * bt.trades / 3) + bt.totalReturn / 1000;
-    rows.push({ id, trades: bt.trades, winRate: bt.winRate, totalReturn: bt.totalReturn, lastSig, barsAgo, eligible, score });
+    rows.push({ id, trades: bt.trades, winRate: bt.winRate, totalReturn: bt.totalReturn, maxDrawdown: bt.maxDrawdown, profitFactor: bt.profitFactor, lastSig, barsAgo, eligible, score });
   }
   rows.sort((a, b) => b.score - a.score || b.totalReturn - a.totalReturn);
   return { rows, best: rows[0] ? rows[0].id : null };
+}
+
+function aggregateBacktests(rows) {
+  const valid = rows.filter(x => x && Number.isFinite(x.totalReturn));
+  const trades = valid.reduce((sum, x) => sum + x.trades, 0);
+  const wins = valid.reduce((sum, x) => sum + x.trades * x.winRate / 100, 0);
+  const equity = valid.reduce((value, x) => value * (1 + x.totalReturn / 100), 1);
+  return {
+    trades,
+    winRate: trades ? 100 * wins / trades : 0,
+    totalReturn: (equity - 1) * 100,
+    maxDrawdown: valid.reduce((max, x) => Math.max(max, x.maxDrawdown || 0), 0),
+    profitFactor: valid.length ? valid.reduce((sum, x) => sum + (Number.isFinite(x.profitFactor) ? x.profitFactor : 0), 0) / valid.length : 0
+  };
+}
+
+/*
+ * 워크포워드 조합 검증:
+ * 과거 학습 구간에서만 조합을 고르고, 바로 뒤의 검증 구간에 처음 적용합니다.
+ * 지표 워밍업을 보존하기 위해 검증 신호는 전체 과거 데이터로 계산하되,
+ * backtest의 startIndex/endIndex로 검증 구간 체결만 집계합니다.
+ */
+function walkForwardBundle(d, candidateIds, maxK = 5, options = BACKTEST_DEFAULTS) {
+  const cands = (candidateIds && candidateIds.length ? candidateIds : COMBO_IDS).filter(id => COMBO_IDS.includes(id));
+  const base = { ...BACKTEST_DEFAULTS, ...options };
+  const minTrain = Math.max(60, Math.floor(Number(base.minTrain) || Math.max(80, Math.floor(d.length * 0.6))));
+  const testSize = Math.max(20, Math.floor(Number(base.testSize) || Math.max(20, Math.floor(d.length * 0.2))));
+  const step = Math.max(1, Math.floor(Number(base.step) || testSize));
+  const folds = [];
+  for (let trainEnd = minTrain; trainEnd + testSize <= d.length; trainEnd += step) {
+    const train = d.slice(0, trainEnd);
+    const picked = greedyBundle(train, cands, maxK, base);
+    const testEnd = Math.min(d.length, trainEnd + testSize);
+    const signals = comboSignals(d.slice(0, testEnd), picked.bundle);
+    const stats = backtest(d.slice(0, testEnd), signals, { ...base, startIndex: trainEnd, endIndex: testEnd - 1 });
+    folds.push({ trainEnd, testEnd, bundle: picked.bundle, stats, steps: picked.steps });
+  }
+  const fallback = greedyBundle(d, cands, maxK, base);
+  const latest = folds.length ? folds[folds.length - 1] : null;
+  const bundle = latest ? latest.bundle : fallback.bundle;
+  const signals = comboSignals(d, bundle);
+  const stats = folds.length ? aggregateBacktests(folds.map(x => x.stats)) : fallback.stats;
+  return { bundle, signals, stats, steps: latest ? latest.steps : fallback.steps, folds };
 }
 function aggregateHistory(hist) {
   const m = {};
@@ -966,15 +1068,16 @@ function comboSignals(d, ids, thresh = 0.34) {
   for (let i = 0; i < d.length; i++) {
     let s = 0, k = 0;
     for (const arr of series) { if (arr[i] !== 0) { s += arr[i]; k++; } }
-    const score = k ? s / series.length : 0;
+    // 중립(0) 지표는 투표에 참여하지 않으므로 실제 유효 지표 수로 정규화합니다.
+    const score = k ? s / k : 0;
     if (pos <= 0 && score >= thresh) { sig[i] = 'BUY'; pos = 1; }
     else if (pos >= 0 && score <= -thresh) { sig[i] = 'SELL'; pos = -1; }
   }
   return sig;
 }
-function greedyBundle(d, candidateIds, maxK = 5) {
+function greedyBundle(d, candidateIds, maxK = 5, options = BACKTEST_DEFAULTS) {
   const cands = (candidateIds && candidateIds.length ? candidateIds : COMBO_IDS).filter(id => COMBO_IDS.includes(id));
-  const evalSet = ids => backtest(d, comboSignals(d, ids));
+  const evalSet = ids => backtest(d, comboSignals(d, ids), options);
   const steps = [];
   let bundle = [], best = { totalReturn: -Infinity };
   for (let k = 0; k < Math.min(maxK, cands.length); k++) {
@@ -989,7 +1092,7 @@ function greedyBundle(d, candidateIds, maxK = 5) {
     steps.push({ add: pick, trades: best.trades, winRate: best.winRate, totalReturn: best.totalReturn });
   }
   const sig = comboSignals(d, bundle.length ? bundle : cands.slice(0, 1));
-  const stats = backtest(d, sig);
+  const stats = backtest(d, sig, options);
   return { bundle: bundle.length ? bundle : cands.slice(0, 1), signals: sig, stats, steps };
 }
 
@@ -1001,6 +1104,6 @@ if (typeof module !== 'undefined' && module.exports) {
     ChaikinVol, Ulcer, Klinger, PVT, CMF, EMV, NetVol, VolOsc, OBV, Aroon, ADX, Vortex, KST,
     MACD, BB, PctB, Keltner, Donchian, Envelopes, Supertrend, SAR, Ichimoku, VWAP, VWMA,
     KAMA, McGinley, ALMA, VIDYA, T3, ZLEMA, DEMA, TEMA, TRIX, Alligator, Gator, BWMFI,
-    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, backtest, compareStrategies, aggregateHistory, comboSignals, greedyBundle, COMBO_IDS
+    Fractals, ZigZag, pivotLevels, CandlePatterns, VProfile, swingPoints, autoLevels, Strat, BACKTEST_DEFAULTS, backtest, compareStrategies, aggregateHistory, comboSignals, greedyBundle, walkForwardBundle, COMBO_IDS
   };
 }

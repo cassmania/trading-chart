@@ -13,6 +13,63 @@ const DEMO_ONLY_SYMBOLS = new Set(['AAPL', '005930.KS']);
 const INTRA = { m1: 1, m5: 5, m15: 15, m30: 30, h1: 60, h4: 240, h12: 'H12' };
 const BINV = { D: '1d', W: '1w', M: '1M', m1: '1m', m5: '5m', m15: '15m', m30: '30m', h1: '1h', h4: '4h', h12: '12h' };
 const UPBIT_MIN = { m1: 1, m5: 5, m15: 15, m30: 30, h1: 60, h4: 240 };
+// 장기 이동평균과 주봉·월봉 지표가 충분한 표본을 사용하도록 최근 600봉을 기본으로 받습니다.
+// 업비트는 한 번에 최대 200봉만 제공하므로 아래 페이지 크기로 나누어 누적합니다.
+const HISTORY_LIMIT = 600;
+const UPBIT_PAGE = 200;
+const DATA_CACHE_TTL = 15 * 1000;
+const candleCache = new Map();
+
+function cloneBars(data) {
+  return data.map(b => ({ ...b }));
+}
+
+function normalizeBars(data) {
+  const byTime = new Map();
+  for (const bar of data) {
+    if (!bar || bar.time == null || !Number.isFinite(Number(bar.close))) continue;
+    byTime.set(String(bar.time), {
+      time: bar.time,
+      open: Number(bar.open), high: Number(bar.high), low: Number(bar.low),
+      close: Number(bar.close), volume: Number(bar.volume) || 0
+    });
+  }
+  return [...byTime.values()].sort((a, b) => {
+    if (typeof a.time === 'number' && typeof b.time === 'number') return a.time - b.time;
+    return String(a.time).localeCompare(String(b.time));
+  });
+}
+
+async function cachedCandles(key, signal, loader) {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  const hit = candleCache.get(key);
+  if (hit && Date.now() - hit.savedAt < DATA_CACHE_TTL) return cloneBars(hit.data);
+  const data = normalizeBars(await loader());
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  candleCache.set(key, { savedAt: Date.now(), data: cloneBars(data) });
+  return cloneBars(data);
+}
+
+async function fetchUpbitCandles(path, market, target, signal, mapRow) {
+  const rows = [];
+  let to = '';
+  while (rows.length < target) {
+    const count = Math.min(UPBIT_PAGE, target - rows.length);
+    const params = new URLSearchParams({ market, count: String(count) });
+    if (to) params.set('to', to);
+    const r = await fetch('https://api.upbit.com/v1/candles/' + path + '?' + params.toString(), { signal, cache: 'no-store' });
+    if (!r.ok) throw new Error('upbit ' + r.status);
+    const page = await r.json();
+    if (!Array.isArray(page) || !page.length) break;
+    rows.push(...page);
+    const oldest = page[page.length - 1]?.candle_date_time_utc;
+    const nextTo = oldest ? (oldest.endsWith('Z') ? oldest : oldest + 'Z') : '';
+    if (!nextTo || nextTo === to || page.length < count) break;
+    to = nextTo;
+  }
+  return rows.map(mapRow);
+}
+
 function resampleIntra(data, seconds) {
   const out = [];
   let cur = null;
@@ -94,17 +151,18 @@ function upbitMarket(sym, quote) {
 async function tryUpbit(sym, tf, quote, signal) {
   const market = upbitMarket(sym, quote);
   const unit = tf === 'W' ? 'weeks' : tf === 'M' ? 'months' : 'days';
-  const r = await fetch('https://api.upbit.com/v1/candles/' + unit + '?market=' + market + '&count=200', { signal, cache: 'no-store' });
-  if (!r.ok) throw new Error('upbit ' + r.status);
-  const j = await r.json();
-  if (!Array.isArray(j) || j.length < 10) throw new Error('upbit empty');
-  return {
-    market,
-    data: j.reverse().map(c => ({
+  const data = await cachedCandles('upbit:' + market + ':' + tf, signal, () => fetchUpbitCandles(
+    unit, market, HISTORY_LIMIT, signal,
+    c => ({
       time: c.candle_date_time_kst.slice(0, 10),
       open: c.opening_price, high: c.high_price, low: c.low_price, close: c.trade_price,
       volume: c.candle_acc_trade_volume
-    }))
+    })
+  ));
+  if (data.length < 10) throw new Error('upbit empty');
+  return {
+    market,
+    data
   };
 }
 async function tryBinanceTicker(base) {
@@ -151,23 +209,39 @@ async function tryUpbitTicker(sym, quote) {
   if (!Number.isFinite(last) || !Number.isFinite(previous) || last <= 0 || previous <= 0) throw new Error('upbit ticker invalid');
   return [last, previous, true];
 }
-async function tryUpbitIntra(sym, unit, quote, signal) {
+async function tryUpbitIntra(sym, unit, quote, signal, target = HISTORY_LIMIT) {
   const market = upbitMarket(sym, quote);
   if (unit === 'h12') {
-    const r = await tryUpbitIntra(sym, 240, quote, signal);
-    return { market: r.market, data: resampleIntra(r.data, 12 * 3600) };
+    const r = await tryUpbitIntra(sym, 240, quote, signal, target * 3);
+    return { market: r.market, data: resampleIntra(r.data, 12 * 3600).slice(-HISTORY_LIMIT) };
   }
-  const r = await fetch('https://api.upbit.com/v1/candles/minutes/' + unit + '?market=' + market + '&count=200', { signal, cache: 'no-store' });
-  if (!r.ok) throw new Error('upbit ' + r.status);
-  const j = await r.json();
-  if (!Array.isArray(j) || j.length < 10) throw new Error('upbit empty');
-  return {
-    market,
-    data: j.reverse().map(c => ({
+  const data = await cachedCandles('upbit-intra:' + market + ':' + unit + ':' + target, signal, async () => {
+    const rows = [];
+    let to = '';
+    while (rows.length < target) {
+      const count = Math.min(UPBIT_PAGE, target - rows.length);
+      const params = new URLSearchParams({ market, count: String(count) });
+      if (to) params.set('to', to);
+      const r = await fetch('https://api.upbit.com/v1/candles/minutes/' + unit + '?' + params.toString(), { signal, cache: 'no-store' });
+      if (!r.ok) throw new Error('upbit ' + r.status);
+      const page = await r.json();
+      if (!Array.isArray(page) || !page.length) break;
+      rows.push(...page);
+      const oldest = page[page.length - 1]?.candle_date_time_utc;
+      const nextTo = oldest ? (oldest.endsWith('Z') ? oldest : oldest + 'Z') : '';
+      if (!nextTo || nextTo === to || page.length < count) break;
+      to = nextTo;
+    }
+    return rows.map(c => ({
       time: Math.floor(new Date(c.candle_date_time_kst + '+09:00').getTime() / 1000),
       open: c.opening_price, high: c.high_price, low: c.low_price, close: c.trade_price,
       volume: c.candle_acc_trade_volume
-    }))
+    }));
+  });
+  if (data.length < 10) throw new Error('upbit empty');
+  return {
+    market,
+    data
   };
 }
 async function fetchStooq(sym, signal) {
@@ -188,21 +262,23 @@ async function fetchStooq(sym, signal) {
   return out;
 }
 async function fetchKlines(url, signal) {
-  const r = await fetch(url, { signal, cache: 'no-store' });
-  if (!r.ok) throw new Error('klines ' + r.status);
-  const j = await r.json();
-  if (!Array.isArray(j) || j.length < 10) throw new Error('klines empty');
-  return j.map(k => ({
-    time: Math.floor(k[0] / 1000),
-    open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5]
-  })).sort((a, b) => a.time - b.time);
+  return cachedCandles('klines:' + url, signal, async () => {
+    const r = await fetch(url, { signal, cache: 'no-store' });
+    if (!r.ok) throw new Error('klines ' + r.status);
+    const j = await r.json();
+    if (!Array.isArray(j) || j.length < 10) throw new Error('klines empty');
+    return j.map(k => ({
+      time: Math.floor(k[0] / 1000),
+      open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5]
+    }));
+  });
 }
 async function tryBinance(base, tf, signal) {
-  const data = await fetchKlines('https://api.binance.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200', signal);
+  const data = await fetchKlines('https://api.binance.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=' + HISTORY_LIMIT, signal);
   return { market: base + '/USDT', exch: '바이낸스', data };
 }
 async function tryMexc(base, tf, signal) {
-  const data = await fetchKlines('https://api.mexc.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=200', signal);
+  const data = await fetchKlines('https://api.mexc.com/api/v3/klines?symbol=' + base + 'USDT&interval=' + BINV[tf] + '&limit=' + HISTORY_LIMIT, signal);
   return { market: base + '/USDT', exch: 'MEXC', data };
 }
 function cryptoBase(sym) {
@@ -464,7 +540,7 @@ function analyzeActive() {
   h += '<table><tr><th>전략</th><th>신호</th><th>거래</th><th>승률</th><th>평균승률</th><th>수익</th></tr>';
   if (p.lastCombo) {
     const c = p.lastCombo, sg = c.lastSig ? (c.lastSig === 'BUY' ? '매수' : '매도') + ' ' + c.barsAgo + '봉전' : '—';
-    h += '<tr class="best"><td>★ 조합(' + c.bundle.length + '종)</td><td>' + hl(sg) + '</td><td>' + c.stats.trades + '</td><td>' + c.stats.winRate.toFixed(1) + '%</td><td>—</td><td>' + (c.stats.totalReturn >= 0 ? '+' : '') + c.stats.totalReturn.toFixed(1) + '%</td></tr>';
+    h += '<tr class="best"><td>★ 조합(' + c.bundle.length + '종' + (c.oos ? '·OOS' : '') + ')</td><td>' + hl(sg) + '</td><td>' + c.stats.trades + '</td><td>' + c.stats.winRate.toFixed(1) + '%</td><td>—</td><td>' + (c.stats.totalReturn >= 0 ? '+' : '') + c.stats.totalReturn.toFixed(1) + '%</td></tr>';
   }
   for (const r of b.cmp.rows) {
     const nm = STRAT_NAME[r.id] || r.id;
@@ -552,8 +628,8 @@ async function scheduledBacktest() {
   btHist.push({ t: Date.now(), sym: p.symbol, tf: p.tf, rows: cmp.rows.map(r => ({ id: r.id, trades: r.trades, winRate: r.winRate, totalReturn: r.totalReturn })) });
   try {
     const cands = [...p.active.keys()].filter(id => COMBO_IDS.includes(id));
-    const g = greedyBundle(data, cands.length >= 2 ? cands : COMBO_IDS.slice(), 5);
-    btHist.push({ t: Date.now(), sym: p.symbol, tf: p.tf, rows: [{ id: 'combo:' + g.bundle.slice().sort().join('+'), trades: g.stats.trades, winRate: g.stats.winRate, totalReturn: g.stats.totalReturn }] });
+    const g = walkForwardBundle(data, cands.length >= 2 ? cands : COMBO_IDS.slice(), 5);
+    btHist.push({ t: Date.now(), sym: p.symbol, tf: p.tf, rows: [{ id: 'combo:' + g.bundle.slice().sort().join('+'), trades: g.stats.trades, winRate: g.stats.winRate, totalReturn: g.stats.totalReturn, maxDrawdown: g.stats.maxDrawdown, validationFolds: g.folds.length }] });
   } catch (e) {}
   btHist = btHist.slice(-BT_MAX);
   saveBt();
