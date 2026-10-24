@@ -227,10 +227,7 @@ class ChartPane {
     el.className = ch >= 0 ? 'up' : 'down';
   }
   onCross(p) {
-    if (!p.time || !this.daily.length) return;
-    const data = this.curData();
-    const bar = data.find(b => b.time === p.time) || data.reduce((a, b) => b.time <= p.time ? b : a, data[0]);
-    if (bar) { this.setHead(bar); const i = data.indexOf(bar); if (i > 0) this.setChg(bar.close, data[i - 1].close); }
+    // 십자선은 과거 봉을 가리키되 상단 시세는 항상 마지막 실시간 봉을 유지합니다.
   }
   onKey(e) {
     const ts = this.chart.timeScale();

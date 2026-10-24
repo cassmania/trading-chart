@@ -453,7 +453,7 @@ function buildLayout(n, keepSyms) {
     cell.innerHTML = '<div class="cellbar"><input class="csym" spellcheck="false"/><button class="cgo">조회</button>'
       + '<span class="cpx"></span>'
       + '<select class="ctf"><option value="m1">1분</option><option value="m15">15분</option><option value="m30">30분</option><option value="h1">1시간</option><option value="h4">4시간</option><option value="h12">12시간</option><option value="D">1일</option><option value="W">주봉</option><option value="M">월봉</option></select>'
-      + '<span class="cohlc"><b class="cs"></b> <span class="co"></span> <span class="ch"></span> <span class="cl"></span> <span class="cc"></span> <span class="cg"></span></span><button class="cfs" title="이 차트 전체화면">⛶</button></div>'
+      + '<span class="cohlc"><b class="cs"></b> <span class="co"></span> <span class="ch"></span> <span class="cl"></span> <span class="cc"></span> <span class="cg"></span></span><button class="cfs" title="이 차트 전체화면">⛶</button><button class="cplay" title="이 차트 리플레이 재생" aria-label="이 차트 리플레이 재생">▶</button><button class="cstop" title="이 차트 리플레이 정지" aria-label="이 차트 리플레이 정지">■</button></div>'
       + '<div class="cchart" tabindex="0"></div><div class="cpanes"></div><div id="autoleg"></div>';
     grid.appendChild(cell);
     const q = s => cell.querySelector(s);
@@ -486,6 +486,18 @@ function buildLayout(n, keepSyms) {
         saveLayout();
       }
     });
+    q('.cplay').onclick = ev => {
+      ev.stopPropagation();
+      if (pane !== activePane) setActive(pane);
+      if (pane.startReplay(400)) routeMsg('리플레이 시작 (클릭한 봉부터, 없으면 100봉 전)');
+      else routeMsg('리플레이할 데이터 없음');
+    };
+    q('.cstop').onclick = ev => {
+      ev.stopPropagation();
+      if (pane !== activePane) setActive(pane);
+      pane.stopReplay();
+      routeMsg('리플레이 정지');
+    };
     cell.addEventListener('mousedown', () => { if (pane !== activePane) setActive(pane); });
     els.ctf.value = pane.tf;
     els.ctf.onchange = ev => { pane.setTF(ev.target.value); saveLayout(); };
