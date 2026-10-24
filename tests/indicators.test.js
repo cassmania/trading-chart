@@ -8,7 +8,8 @@
 
 const assert = require('node:assert/strict');
 const {
-  smaArr, emaArr, rmaArr, RSI, Stoch, MACD, backtest, walkForwardBundle, COMBO_IDS
+  smaArr, emaArr, rmaArr, RSI, Stoch, StochRSI, AO, ADX, Coppock, DEMA, TEMA, TRIX, BWMFI,
+  MACD, backtest, walkForwardBundle, COMBO_IDS
 } = require('../indicators.js');
 
 function bars(closes) {
@@ -37,6 +38,35 @@ assert.equal(flat[14], 50);
 const stoch = Stoch(bars(Array.from({ length: 40 }, (_, i) => 100 + (i % 5))), 14, 3, 3);
 assert.equal(stoch.K.findIndex(v => v !== null), 15);
 assert.equal(stoch.D.findIndex(v => v !== null), 17);
+
+// Stoch RSI는 RSI 값이 14개 쌓인 뒤 다시 14개 구간을 확보해야 첫 원시값을 계산합니다.
+const stochRsi = StochRSI(bars(Array.from({ length: 60 }, (_, i) => 100 + i)), 14, 14, 3, 3);
+assert.equal(stochRsi.K.findIndex(v => v !== null), 29);
+assert.equal(stochRsi.D.findIndex(v => v !== null), 31);
+
+// ADX의 +DM/-DM은 같은 봉에서 동시에 누적하지 않고 더 큰 방향 하나만 채택합니다.
+const directional = ADX([
+  { time: 0, open: 9, high: 10, low: 0, close: 9, volume: 1000 },
+  { time: 1, open: 9, high: 15, low: -1, close: 10, volume: 1000 },
+  { time: 2, open: 10, high: 14, low: -3, close: 8, volume: 1000 }
+], 2);
+assert.equal(directional.mdi[1], 0);
+
+// 음수 AO는 음수로 유지되어 하락 히스토그램으로 표시되어야 합니다.
+const ao = AO(bars(new Array(34).fill(100).concat(new Array(6).fill(90))));
+assert.ok(ao[34] < 0);
+
+// 중첩 EMA 지표는 각 EMA가 준비된 뒤에만 값을 내야 합니다.
+const trendData = bars(Array.from({ length: 80 }, (_, i) => 100 + i));
+assert.equal(DEMA(trendData, 14).findIndex(v => v !== null), 26);
+assert.equal(TEMA(trendData, 14).findIndex(v => v !== null), 39);
+assert.equal(TRIX(trendData, 14).findIndex(v => v !== null), 40);
+
+// Coppock은 두 ROC와 WMA가 모두 준비되기 전까지 인위적인 0을 출력하지 않습니다.
+assert.equal(Coppock(trendData, 10, 14, 11).findIndex(v => v !== null), 23);
+
+// 거래량이 0인 BW MFI는 1로 바꾸어 왜곡하지 않고 계산 불가로 둡니다.
+assert.equal(BWMFI([{ time: 0, open: 10, high: 12, low: 10, close: 11, volume: 0 }])[0], null);
 
 // MACD 시그널은 MACD 값이 생긴 뒤 다시 시그널 기간만큼 워밍업해야 합니다.
 const macd = MACD(bars(Array.from({ length: 60 }, (_, i) => 100 + i)), 12, 26, 9);

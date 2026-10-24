@@ -1,8 +1,11 @@
 /* 트레이딩 챠트 — 앱 셸: 레이아웃·툴바·관심종목 (차트는 pane.js ChartPane) */
 'use strict';
 const $ = id => document.getElementById(id);
-let tf = 'D', currency = 'USDT', light = false, autoMode = true, autoStrat = 'supertrend';
-try { light = localStorage.getItem('tvchart-theme') === 'light'; } catch (e) {}
+let tf = 'D', currency = 'USDT', light = true, autoMode = true, autoStrat = 'supertrend';
+try {
+  const savedTheme = localStorage.getItem('tvchart-theme');
+  if (savedTheme) light = savedTheme === 'light';
+} catch (e) {}
 let favs = [];
 try { favs = JSON.parse(localStorage.getItem('tvchart-fav') || '[]'); if (!Array.isArray(favs)) favs = []; } catch (e) { favs = []; }
 function saveFavs() { try { localStorage.setItem('tvchart-fav', JSON.stringify(favs)); } catch (e) {} }
@@ -85,8 +88,8 @@ function resampleIntra(data, seconds) {
 const NATIVE = ['binance', 'mexc', 'upbit'];
 const isIntra = () => !!INTRA[tf];
 const THEMES = {
-  dark: { bg: '#131722', text: '#d1d4dc', grid: 'rgba(42,46,57,.55)', border: '#2a2e39', cross: '#758696', crossBg: '#4c525e' },
-  light: { bg: '#ffffff', text: '#131722', grid: 'rgba(224,227,235,.9)', border: '#e0e3eb', cross: '#9aa0b0', crossBg: '#e6e8eb' }
+  dark: { bg: '#211f1c', text: '#f2ede6', grid: 'rgba(111,96,83,.35)', border: '#4a4038', cross: '#b19b8b', crossBg: '#755849' },
+  light: { bg: '#f7f3ed', text: '#2f2a26', grid: 'rgba(127,106,90,.16)', border: '#dfd4c8', cross: '#a47967', crossBg: '#c97758' }
 };
 
 /* ---- 데이터 소스 ---- */
@@ -384,7 +387,7 @@ const INDS = [
   ['tema14','TEMA 14','추세'],['kama10','KAMA 10','추세'],['mcginley14','맥긴리 14','추세'],
   ['alma9','ALMA 9','추세'],['vidya14','VIDYA 14','추세'],['t3','T3 5','추세'],
   ['zlema14','제로랙 EMA 14','추세'],['lsma25','LSMA 25','추세'],['vwma20','VWMA 20','추세'],
-  ['vwap','VWAP','추세'],['avwap','앵커 VWAP','추세'],['smma14','SMMA 14','추세'],
+  ['vwap','VWAP','추세'],['smma14','SMMA 14','추세'],
   ['median','중앙값','추세'],['mode14','최빈값 14','추세'],['typical','Typical Price','추세'],
   ['wclose','Weighted Close','추세'],
   ['bb20','볼린저 20/2','채널'],['keltner','켈트너 20/1','채널'],['donchian','돈치안 20','채널'],
@@ -417,7 +420,14 @@ const INDS = [
 const STRAT_NAME = { emaCross: 'EMA 크로스 9/21', maCross: 'MA 크로스 50/200', macd: 'MACD 크로스', rsi: 'RSI 반전', supertrend: '슈퍼트렌드 반전', sar: '파라볼릭SAR 반전', bb: '볼린저 돌파', stoch: '스토캐스틱 크로스', atrStop: 'ATR 추적손절 반전' };
 
 /* ---- 멀티차트 레이아웃 ---- */
-let panes = [], activePane = null;
+let panes = [], activePane = null, briefTimer = null;
+function scheduleBriefing() {
+  if (briefTimer) return;
+  briefTimer = setTimeout(() => {
+    briefTimer = null;
+    if (activePane) analyzeActive();
+  }, 3000);
+}
 const DEFAULT_SYMS = ['BTC', 'ETH', 'XRP', 'SOL', 'ONDO', 'AAPL', '005930.KS', 'DOGE'];
 function setActive(p) {
   if (activePane) { activePane.stopLive(); activePane.els.cell.classList.remove('active'); }
@@ -468,6 +478,7 @@ function buildLayout(n, keepSyms) {
       onTick: (p, price) => {
         if (p !== activePane) return;
         try { document.title = fmtPx(price) + ' · ' + p.label() + ' — 트레이딩 챠트'; } catch (e) {}
+        scheduleBriefing();
       },
       onSymbol: p => {
         // 비활성 패널이 로드될 때 현재 선택된 차트의 무거운 분석을 중복 실행하지 않습니다.

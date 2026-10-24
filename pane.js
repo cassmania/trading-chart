@@ -47,7 +47,6 @@ function computeInd(id, data) {
     case 'lsma25': return { lines: [{ color: LC.purple, v: pts(data, linregArr(C_, 25)) }] };
     case 'vwma20': return { lines: [{ color: LC.cyan, v: pts(data, VWMA(data, 20)) }] };
     case 'vwap': return { lines: [{ color: LC.blue, v: pts(data, VWAP(data)) }] };
-    case 'avwap': return { lines: [{ color: LC.yellow, v: pts(data, VWAP(data)) }] };
     case 'smma14': return { lines: [{ color: LC.gray, v: pts(data, rmaArr(C_, 14)) }] };
     case 'median': return { lines: [{ color: LC.gray, v: pts(data, MED(data)) }] };
     case 'mode14': {
@@ -91,7 +90,10 @@ function computeInd(id, data) {
     case 'cmo9': return { pane: 1, lines: [{ color: LC.green, v: pts(data, CMO(data, 9)) }] };
     case 'tsi': { const t = TSI(data); return { pane: 1, lines: [{ color: LC.blue, v: pts(data, t.tsi) }, { color: LC.orange, v: pts(data, t.signal) }] }; }
     case 'uo': return { pane: 1, lines: [{ color: LC.purple, v: pts(data, UO(data)) }] };
-    case 'ao': return { pane: 1, hists: [{ color: BULL, v: pts(data, AO(data).map(v => v === null ? null : Math.abs(v))) }], lines: [{ color: BULL, v: pts(data, AO(data)) }] };
+    case 'ao': {
+      const ao = pts(data, AO(data));
+      return { pane: 1, hists: [{ color: BULL, v: ao.map(p => ({ ...p, color: p.value >= 0 ? BULL : BEAR })) }], lines: [{ color: LC.green, v: ao }] };
+    }
     case 'demarker13': return { pane: 1, lines: [{ color: LC.cyan, v: pts(data, DeMarker(data, 13)) }] };
     case 'rvi': { const r = RVI(data); return { pane: 1, lines: [{ color: LC.blue, v: pts(data, r.rvi) }, { color: LC.orange, v: pts(data, r.signal) }] }; }
     case 'relvol': return { pane: 1, lines: [{ color: LC.purple, v: pts(data, RelVolIndex(data, 10)) }] };
@@ -179,7 +181,8 @@ class ChartPane {
     this.ma20 = this.chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     this.ma50 = this.chart.addLineSeries({ color: '#9c27b0', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
     this.chart.subscribeCrosshairMove(p => this.onCross(p));
-    new ResizeObserver(es => { const r = es[0].contentRect; try { this.chart.applyOptions({ width: r.width, height: r.height }); } catch (e) {} }).observe(els.box);
+    this.resizeObserver = new ResizeObserver(es => { const r = es[0].contentRect; try { this.chart.applyOptions({ width: r.width, height: r.height }); } catch (e) {} });
+    this.resizeObserver.observe(els.box);
     const self = this;
     this.chart.subscribeClick(p => {
       try { els.box.focus({ preventScroll: true }); } catch (e) { try { els.box.focus(); } catch (e2) {} }
@@ -425,8 +428,9 @@ class ChartPane {
     const box = doc.createElement('div'); box.className = 'pb';
     wrap.appendChild(ph); wrap.appendChild(box); this.els.panes.appendChild(wrap);
     const c = LightweightCharts.createChart(box, baseOpts());
-    new ResizeObserver(es => { const r = es[0].contentRect; try { c.applyOptions({ width: r.width, height: r.height }); } catch (e) {} }).observe(box);
-    const entry = { id, chart: c, box, wrap, handlers: [] };
+    const resizeObserver = new ResizeObserver(es => { const r = es[0].contentRect; try { c.applyOptions({ width: r.width, height: r.height }); } catch (e) {} });
+    resizeObserver.observe(box);
+    const entry = { id, chart: c, box, wrap, resizeObserver, handlers: [] };
     entry.handlers.push([c, this.linkTimeScale(c, c)]);
     entry.handlers.push([this.chart, this.linkTimeScale(this.chart, this.chart)]);
     this.subCharts.push(entry);
@@ -445,6 +449,7 @@ class ChartPane {
     for (const s of st.series) { try { s.c.removeSeries(s.s); } catch (e) {} }
     for (const p of st.panes) {
       this.subCharts = this.subCharts.filter(x => x !== p);
+      try { p.resizeObserver.disconnect(); } catch (e) {}
       try { p.chart.remove(); } catch (e) {}
       p.wrap.remove();
     }
@@ -453,6 +458,22 @@ class ChartPane {
     this.active.delete(id);
     this.refreshMarkers();
     if (this.hooks.onInd) this.hooks.onInd(this);
+  }
+  refreshLiveIndicators() {
+    if (!this.daily.length || !this.active.size) return;
+    const data = this.curData();
+    for (const [id, st] of this.active) {
+      const r = computeInd(id, data);
+      const values = [...(r.lines || []), ...(r.hists || [])].filter(x => x.v && x.v.length);
+      if (values.length !== st.series.length) {
+        this.reapplyAll();
+        return;
+      }
+      values.forEach((item, i) => st.series[i].s.setData(item.v));
+      if (r.markers && r.markers.length) this.markerLayers['ind:' + id] = r.markers;
+      else delete this.markerLayers['ind:' + id];
+    }
+    this.refreshMarkers();
   }
   toggleInd(id) {
     const meta = INDS.find(x => x[0] === id);
@@ -731,6 +752,9 @@ class ChartPane {
     try {
       this.candle.update({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
       this.vol.update({ time: bar.time, value: bar.volume, color: bar.close >= bar.open ? 'rgba(242,54,69,.55)' : 'rgba(41,98,255,.55)' });
+      this.ma20.setData(sma(data, 20));
+      this.ma50.setData(sma(data, 50));
+      this.refreshLiveIndicators();
     } catch (e) {}
     if (this.hooks.onTick) this.hooks.onTick(this, t.price);
   }
@@ -738,7 +762,11 @@ class ChartPane {
     this.loadRequestId += 1;
     if (this.loadController) { this.loadController.abort(); this.loadController = null; }
     this.stopLive();
-    for (const p of this.subCharts) { try { p.chart.remove(); } catch (e) {} }
+    try { this.resizeObserver.disconnect(); } catch (e) {}
+    for (const p of this.subCharts) {
+      try { p.resizeObserver.disconnect(); } catch (e) {}
+      try { p.chart.remove(); } catch (e) {}
+    }
     this.subCharts = [];
     try { this.chart.remove(); } catch (e) {}
     if (this.els.cell) this.els.cell.remove();

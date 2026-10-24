@@ -54,11 +54,19 @@ function rmaArr(v, n) {  // Wilder
   return out;
 }
 function wmaArr(v, n) {
-  const out = new Array(v.length).fill(null), d = n * (n + 1) / 2;
-  for (let i = n - 1; i < v.length; i++) {
+  const len = Math.max(1, Math.floor(n));
+  const out = new Array(v.length).fill(null), d = len * (len + 1) / 2;
+  for (let i = len - 1; i < v.length; i++) {
     let s = 0;
-    for (let j = 0; j < n; j++) s += v[i - j] * (n - j);
-    out[i] = s / d;
+    let valid = true;
+    for (let j = 0; j < len; j++) {
+      const raw = v[i - j];
+      if (raw === null || raw === undefined) { valid = false; break; }
+      const x = Number(raw);
+      if (!Number.isFinite(x)) { valid = false; break; }
+      s += x * (len - j);
+    }
+    if (valid) out[i] = s / d;
   }
   return out;
 }
@@ -150,7 +158,7 @@ function Stoch(d, k = 14, sk = 3, sd = 3) {
 function StochRSI(d, rsiLen = 14, stLen = 14, k = 3, sd = 3) {
   const r = RSI(d, rsiLen);
   const raw = r.map((v, i) => {
-    if (v === null || i < rsiLen + stLen - 2) return null;
+    if (v === null || i < rsiLen + stLen - 1) return null;
     const w = r.slice(i - stLen + 1, i + 1);
     const hh = Math.max(...w), ll = Math.min(...w);
     return hh === ll ? 50 : 100 * (v - ll) / (hh - ll);
@@ -302,9 +310,10 @@ function SchaffTC(d, tc = 10, fast = 23, slow = 50, cycle = 10) {
 }
 function Coppock(d, wmaLen = 10, longROC = 14, shortROC = 11) {
   const c = C(d);
-  const roc = (n) => c.map((v, i) => i < n ? 0 : 100 * (v - c[i - n]) / c[i - n]);
+  const roc = (n) => c.map((v, i) => i < n ? null : 100 * (v - c[i - n]) / c[i - n]);
   const rl = roc(longROC), rs = roc(shortROC);
-  return wmaArr(rl.map((v, i) => v + rs[i]), wmaLen);
+  const sum = rl.map((v, i) => v === null || rs[i] === null ? null : v + rs[i]);
+  return wmaArr(sum, wmaLen);
 }
 function PGO(d, n = 14, factor = 3) {  // Pretty Good Oscillator
   const c = C(d), m = smaArr(c, n), tr = TR(d), a = smaArr(tr, n);
@@ -409,8 +418,16 @@ function Aroon(d, n = 14) {
 }
 function ADX(d, n = 14) {
   const h = H(d), l = L(d), tr = TR(d);
-  const pdm = h.map((x, i) => i === 0 ? 0 : Math.max(x - h[i - 1], 0));
-  const mdm = l.map((x, i) => i === 0 ? 0 : Math.max(l[i - 1] - x, 0));
+  const pdm = h.map((x, i) => {
+    if (i === 0) return 0;
+    const up = x - h[i - 1], down = l[i - 1] - l[i];
+    return up > down && up > 0 ? up : 0;
+  });
+  const mdm = l.map((x, i) => {
+    if (i === 0) return 0;
+    const up = h[i] - h[i - 1], down = l[i - 1] - x;
+    return down > up && down > 0 ? down : 0;
+  });
   const str = rmaArr(tr, n), sp = rmaArr(pdm, n), sm = rmaArr(mdm, n);
   const pdi = sp.map((v, i) => !str[i] ? null : cl01(100 * v / str[i]));
   const mdi = sm.map((v, i) => !str[i] ? null : cl01(100 * v / str[i]));
@@ -614,17 +631,17 @@ function ZLEMA(d, n = 14) {
 }
 function DEMA(d, n = 14) {
   const c = C(d);
-  const e1 = emaArr(c, n), e2 = emaArr(e1.map(x => x ?? 0), n);
+  const e1 = emaArr(c, n), e2 = emaArr(e1, n);
   return e1.map((v, i) => (v === null || e2[i] === null) ? null : 2 * v - e2[i]);
 }
 function TEMA(d, n = 14) {
   const c = C(d);
-  const e1 = emaArr(c, n), e2 = emaArr(e1.map(x => x ?? 0), n), e3 = emaArr(e2.map(x => x ?? 0), n);
+  const e1 = emaArr(c, n), e2 = emaArr(e1, n), e3 = emaArr(e2, n);
   return e1.map((v, i) => (v === null || e2[i] === null || e3[i] === null) ? null : 3 * v - 3 * e2[i] + e3[i]);
 }
 function TRIX(d, n = 18) {
   const c = C(d);
-  const e1 = emaArr(c, n), e2 = emaArr(e1.map(x => x ?? 0), n), e3 = emaArr(e2.map(x => x ?? 0), n);
+  const e1 = emaArr(c, n), e2 = emaArr(e1, n), e3 = emaArr(e2, n);
   return e3.map((v, i) => (v === null || i === 0 || !e3[i - 1]) ? null : 100 * (v - e3[i - 1]) / e3[i - 1]);
 }
 function Alligator(d, jawLen = 13, jawOff = 8, teethLen = 8, teethOff = 5, lipsLen = 5, lipsOff = 3) {
@@ -650,7 +667,11 @@ function Gator(d) {
   return { upper: up, lower: lo };
 }
 function BWMFI(d) {
-  return d.map(b => (b.high - b.low) === 0 ? 0 : (b.high - b.low) / Math.max(1, b.volume));
+  return d.map(b => {
+    const volume = Number(b.volume);
+    if (!Number.isFinite(volume) || volume <= 0) return null;
+    return (b.high - b.low) / volume;
+  });
 }
 function Fractals(d, n = 2) {
   const h = H(d), l = L(d), up = [], dn = [];
