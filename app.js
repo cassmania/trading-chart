@@ -19,9 +19,11 @@ const TF = {
   M: { label: '월봉', sec: 2592000, binance: '1M', okx: '1Mutc', upbit: 'months' }
 };
 const BARS = 1000;
+// 리플레이 속도: 봉 1개가 그려지는 간격
+const RP_SPEEDS = [[100, '0.1초'], [250, '0.25초'], [500, '0.5초'], [1000, '1초'], [3000, '3초'], [10000, '10초'], [30000, '30초'], [60000, '1분'], [300000, '5분'], [900000, '15분'], [3600000, '1시간']];
 
 const state = {
-  quote: 'USDT', mode: 'long', theme: null, layout: 1, active: 0,
+  quote: 'USDT', mode: 'long', theme: null, layout: 1, active: 0, rpSpeed: 500,
   panes: DEFAULT_SYMS.map(s => ({ sym: s, tf: 'h4' })),
   watch: DEFAULT_WATCH.slice()
 };
@@ -31,6 +33,7 @@ try {
     for (const k of ['quote', 'mode', 'theme']) if (typeof s[k] === 'string') state[k] = s[k];
     if (LAYOUTS.includes(s.layout)) state.layout = s.layout;
     if (Number.isInteger(s.active)) state.active = s.active;
+    if (RP_SPEEDS.some(([ms]) => ms === s.rpSpeed)) state.rpSpeed = s.rpSpeed;
     if (Array.isArray(s.watch) && s.watch.length) state.watch = s.watch.filter(x => typeof x === 'string').slice(0, 30);
     if (Array.isArray(s.panes)) s.panes.slice(0, 8).forEach((p, i) => { if (p && typeof p.sym === 'string') state.panes[i] = { sym: p.sym, tf: TF[p.tf] ? p.tf : 'h4' }; });
     else if (typeof s.sym === 'string') state.panes[0] = { sym: s.sym, tf: TF[s.tf] ? s.tf : 'h4' }; // 이전 버전 저장값
@@ -44,7 +47,7 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       quote: state.quote, mode: state.mode, theme: state.theme, layout: state.layout, active: state.active,
-      panes: state.panes, watch: state.watch
+      panes: state.panes, watch: state.watch, rpSpeed: state.rpSpeed
     }));
   } catch (e) {}
 }
@@ -348,9 +351,15 @@ class Pane {
       + '<span class="badge p-ex">—</span><span class="live p-live"></span>'
       + '<span class="p-px">—</span><span class="p-ch"></span>'
       + '<span class="pill p-sig">—</span>'
+      + '<span class="rp-ctl">'
+      + '<button class="p-rp p-play" title="리플레이 재생 (차트를 클릭한 봉부터, 없으면 100봉 전)" aria-label="리플레이 재생">▶</button>'
+      + '<button class="p-rp p-stop" title="리플레이 정지 (실시간으로 복귀)" aria-label="리플레이 정지" disabled>■</button>'
+      + '<select class="p-spd" title="리플레이 속도 (봉 1개당 시간)" aria-label="리플레이 속도">' + RP_SPEEDS.map(([ms, l]) => '<option value="' + ms + '"' + (ms === state.rpSpeed ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
+      + '</span>'
       + '<button class="p-max" title="이 차트 크게 보기" aria-label="크게 보기">⤢</button>'
       + '</div>'
       + '<div class="pane-body">'
+      + '<div class="rp-info hidden"></div>'
       + '<div class="legend"><div class="lg-row1"><b class="lg-sym">—</b><span class="lg-tf"></span></div><div class="lg-row2"></div><div class="lg-row3"></div></div>'
       + '<div class="chart main"></div><div class="osc-head"></div><div class="chart osc"></div>'
       + '<div class="loading hidden"><span class="spinner"></span><span class="l-txt">불러오는 중…</span></div>'
@@ -358,7 +367,11 @@ class Pane {
     const q = s => el.querySelector(s);
     this.el = el;
     this.$ = { sym: q('.p-sym'), tf: q('.p-tf'), ex: q('.p-ex'), live: q('.p-live'), px: q('.p-px'), ch: q('.p-ch'), sig: q('.p-sig'), max: q('.p-max'),
-      lgSym: q('.lg-sym'), lgTf: q('.lg-tf'), lg2: q('.lg-row2'), lg3: q('.lg-row3'), main: q('.chart.main'), osc: q('.chart.osc'), oscHead: q('.osc-head'), loading: q('.loading'), lTxt: q('.l-txt') };
+      lgSym: q('.lg-sym'), lgTf: q('.lg-tf'), lg2: q('.lg-row2'), lg3: q('.lg-row3'), main: q('.chart.main'), osc: q('.chart.osc'), oscHead: q('.osc-head'), loading: q('.loading'), lTxt: q('.l-txt'),
+      play: q('.p-play'), stop: q('.p-stop'), spd: q('.p-spd'), rpInfo: q('.rp-info') };
+    this.$.play.addEventListener('click', ev => { ev.stopPropagation(); this.rpToggle(); });
+    this.$.stop.addEventListener('click', ev => { ev.stopPropagation(); this.rpStop(); });
+    this.$.spd.addEventListener('change', () => { state.rpSpeed = +this.$.spd.value; save(); if (this.rp && !this.rp.paused) this.rpResume(); });
     this.$.sym.value = this.sym;
     this.$.tf.value = this.tf;
     this.$.sym.addEventListener('keydown', e => { if (e.key === 'Enter') { this.$.sym.blur(); this.load(this.$.sym.value); } if (e.key === 'Escape') { this.$.sym.value = this.sym; this.$.sym.blur(); } });
@@ -383,11 +396,90 @@ class Pane {
     const sync = (a, b) => a.timeScale().subscribeVisibleLogicalRangeChange(r => { if (syncing || !r) return; syncing = true; b.timeScale().setVisibleLogicalRange(r); syncing = false; });
     sync(this.main, this.osc); sync(this.osc, this.main);
     this.main.subscribeCrosshairMove(param => this.updateLegend(param));
+    this.main.subscribeClick(param => { if (param && param.time != null && !this.rp) this.clickT = param.time; });
+  }
+
+  /* ---- 리플레이: 과거 봉부터 한 봉씩 다시 그린다 ---- */
+  rpToggle() {
+    if (this.rp) { if (this.rp.paused) this.rpResume(); else this.rpPause(); return; }
+    const full = this.bars;
+    if (full.length < 30) { toast('리플레이할 데이터가 부족합니다'); return; }
+    let i = full.length - 100;
+    if (this.clickT != null) { const f = full.findIndex(b => b.time === this.clickT); if (f >= 0) i = f; }
+    i = Math.max(20, Math.min(full.length - 2, i));
+    this.rp = { full, i, timer: null, paused: true, dirty: false, lastA: 0 };
+    this.bars = full.slice(0, i + 1);
+    this.candle.setData(this.bars);
+    this.volume.setData(this.bars.map(b => this.volBar(b)));
+    this.runAnalysis();
+    this.fitRecent();
+    this.onPrice(this.bars[this.bars.length - 1].close);
+    if (this === activePane()) renderSide();
+    this.rpResume();
+  }
+
+  rpResume() {
+    const rp = this.rp;
+    if (!rp) return;
+    clearInterval(rp.timer);
+    rp.paused = false;
+    rp.timer = setInterval(() => this.rpStep(), state.rpSpeed);
+    this.rpUi();
+  }
+
+  rpPause() {
+    const rp = this.rp;
+    if (!rp) return;
+    clearInterval(rp.timer); rp.timer = null; rp.paused = true;
+    this.runAnalysis();
+    if (this === activePane()) renderSide();
+    this.rpUi();
+  }
+
+  rpStep() {
+    const rp = this.rp;
+    if (!rp) return;
+    if (rp.i >= rp.full.length - 1) { this.rpPause(); toast('차트 ' + (this.idx + 1) + ': 리플레이가 현재 봉에 도달했습니다'); return; }
+    const b = rp.full[++rp.i];
+    this.bars.push(b);
+    this.candle.update(b); this.volume.update(this.volBar(b));
+    this.onPrice(b.close);
+    const now = Date.now();
+    // 분석(백테스트)은 무거워서 1.2초에 한 번만
+    if (now - rp.lastA > 1200) { rp.lastA = now; this.runAnalysis(); if (this === activePane()) renderSide(); }
+    this.rpUi();
+  }
+
+  rpStop() {
+    const rp = this.rp;
+    if (!rp) return;
+    clearInterval(rp.timer);
+    this.rp = null;
+    this.rpUi();
+    if (rp.dirty) { this.load(this.sym); return; } // 리플레이 중 들어온 실시간 봉 반영
+    this.bars = rp.full;
+    this.candle.setData(this.bars);
+    this.volume.setData(this.bars.map(b => this.volBar(b)));
+    this.runAnalysis();
+    this.fitRecent();
+    this.onPrice(this.bars[this.bars.length - 1].close);
+    if (this === activePane()) renderSide();
+  }
+
+  rpUi() {
+    const rp = this.rp;
+    this.el.classList.toggle('replaying', !!rp);
+    this.$.play.textContent = rp && !rp.paused ? '❚❚' : '▶';
+    this.$.play.title = rp ? (rp.paused ? '리플레이 계속' : '리플레이 일시정지') : '리플레이 재생 (차트를 클릭한 봉부터, 없으면 100봉 전)';
+    this.$.stop.disabled = !rp;
+    this.$.rpInfo.classList.toggle('hidden', !rp);
+    if (rp) this.$.rpInfo.textContent = (rp.paused ? '일시정지 ' : '리플레이 ') + (rp.i + 1) + '/' + rp.full.length + ' · ' + fmtTime(rp.full[rp.i].time);
   }
 
   destroy() {
     if (this.ctrl) this.ctrl.abort();
     clearInterval(this.poll); clearTimeout(this.analyzeTimer);
+    if (this.rp) clearInterval(this.rp.timer);
     try { this.main.remove(); this.osc.remove(); } catch (e) {}
     this.el.remove();
     this.source = null;
@@ -415,6 +507,8 @@ class Pane {
     if (!parsed) { toast('심볼 형식을 확인하세요 (예: BTC, ETH, KRW-XRP)'); this.$.sym.value = this.sym; return; }
     if (parsed.quote && parsed.quote !== state.quote) { setQuote(parsed.quote, parsed.base, this); return; }
     const seq = ++this.seq;
+    if (this.rp) { clearInterval(this.rp.timer); this.rp = null; this.rpUi(); }
+    this.clickT = null;
     if (this.ctrl) this.ctrl.abort();
     const ctrl = this.ctrl = new AbortController();
     clearInterval(this.poll); this.okxOk = false;
@@ -473,6 +567,7 @@ class Pane {
 
   // 바이낸스/OKX 봉 갱신
   applyBar(bar) {
+    if (this.rp) { this.rp.dirty = true; return; }
     const bars = this.bars;
     if (!bars.length) return;
     const last = bars[bars.length - 1];
@@ -486,6 +581,7 @@ class Pane {
 
   // 업비트 체결 → 봉 집계
   applyTrade(tSec, price, qty) {
+    if (this.rp) { this.rp.dirty = true; return; }
     const bars = this.bars;
     if (!bars.length || !Number.isFinite(price)) return;
     const t = bucketStart(tSec, this.tf);
