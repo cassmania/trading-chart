@@ -3,87 +3,97 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<meta name="theme-color" content="#f7f3ed"/>
+<meta name="theme-color" content="#f5f4ee"/>
 <title>트레이딩 챠트</title>
-<link rel="stylesheet" href="styles.css?v=20261024-claude"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css?v=20261025"/>
 </head>
 <body>
-<header id="topbar">
-  <div class="logo"><span class="logo-mark">✦</span> 트레이딩 챠트</div>
-  <span id="liveDot" title="실시간 연결 상태">●</span>
-  <div class="symbox">
-    <input id="symInput" value="BTC" spellcheck="false" placeholder="심볼 (예: BTC, 005930.KS)"/>
-    <button id="symGo" title="조회">조회</button>
-    <button id="favBtn" title="즐겨찾기 추가/해제">☆</button>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true">✦</span><span>트레이딩 챠트</span></div>
+
+  <form class="search" id="symForm" autocomplete="off">
+    <input id="symInput" list="symList" spellcheck="false" placeholder="심볼 (BTC, ETH, KRW-XRP)" aria-label="심볼"/>
+    <datalist id="symList"></datalist>
+    <button type="submit">조회</button>
+  </form>
+
+  <div class="seg" id="tfSeg" role="group" aria-label="시간봉">
+    <button data-tf="m15">15분</button><button data-tf="h1">1시간</button><button data-tf="h4">4시간</button><button data-tf="h12">12시간</button><button data-tf="D">일</button><button data-tf="W">주</button><button data-tf="M">월</button>
   </div>
-  <nav id="tfs">
-    <button data-tf="m1">1분</button><button data-tf="m15">15분</button><button data-tf="m30">30분</button><button data-tf="h1">1시간</button><button data-tf="h4">4시간</button><button data-tf="h12">12시간</button><button data-tf="D" class="on">1D</button><button data-tf="W">1W</button><button data-tf="M">1M</button>
-  </nav>
-  <nav id="cur">
-    <button data-cur="USDT" class="on">USDT</button><button data-cur="KRW">KRW</button>
-  </nav>
-  <nav id="layoutSel" title="차트 개수">
-    <button data-n="1" class="on">1</button><button data-n="2">2</button><button data-n="3">3</button><button data-n="4">4</button><button data-n="6">6</button><button data-n="8">8</button>
-  </nav>
-  <div class="ind">
-    <label><input type="checkbox" id="tMA20" checked/> MA20</label>
-    <label><input type="checkbox" id="tMA50" checked/> MA50</label>
-    <label><input type="checkbox" id="tVol" checked/> 거래량</label>
+
+  <div class="seg" id="quoteSeg" role="group" aria-label="마켓">
+    <button data-q="USDT">USDT</button><button data-q="KRW">KRW</button>
   </div>
-  <button id="indBtn" title="지표 추가">ƒx 지표</button>
-  <button id="autoBtn" class="on" title="클릭 지점 자동 추세/지지·저항선">자동선</button>
-  <button id="helpBtn" title="추세선 의미 설명">?</button>
-  <button id="themeBtn" title="라이트/다크 전환">🌙</button>
-  <button id="fsBtn" title="전체화면">⛶</button>
-  <select id="stratSel" title="전략">
-    <option value="">전략 선택</option>
-    <option value="emaCross">EMA 크로스 9/21</option>
-    <option value="maCross">MA 크로스 50/200</option>
-    <option value="macd">MACD 크로스</option>
-    <option value="rsi">RSI 반전 70/30</option>
-    <option value="supertrend">슈퍼트렌드 반전</option>
-    <option value="sar">파라볼릭SAR 반전</option>
-    <option value="bb">볼린저 돌파</option>
-    <option value="stoch">스토캐스틱 크로스</option>
-    <option value="atrStop">ATR 추적손절 반전</option>
-  </select>
-  <button id="stratGo" title="전략 실행">실행</button>
-  <button id="playBtn" title="리플레이 재생">▶</button>
-  <button id="stopBtn" title="리플레이 정지">■</button>
+
+  <div class="seg" id="modeSeg" role="group" aria-label="매매 방식" title="롱만: 현물 기준 매수→매도 / 롱·숏: 선물 기준 양방향">
+    <button data-m="long">롱만</button><button data-m="both">롱·숏</button>
+  </div>
+
+  <button class="icon" id="themeBtn" title="라이트/다크 전환" aria-label="테마 전환"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
 </header>
-<div id="main">
-  <section id="center">
-    <div id="grid" class="cols-1"></div>
-    <div id="brief">
-      <div class="brief-head"><b id="briefTitle">코인 브리핑</b><span id="briefTime"></span><button id="briefGo">분석</button></div>
-      <div id="briefBody"><p class="brief-empty">차트를 불러오면 자동 분석됩니다</p></div>
+
+<main class="layout">
+  <section class="chart-area">
+    <div class="legend" id="legend">
+      <div class="lg-row1"><b id="lgSym">—</b><span class="badge" id="lgExch">—</span><span id="lgTf"></span><span class="live" id="liveDot" title="실시간 연결 상태"></span></div>
+      <div class="lg-row2" id="lgOhlc"></div>
+      <div class="lg-row3" id="lgInd"></div>
     </div>
-    <div id="chips"></div>
-    <footer id="status"><span id="stSrc">연결 중…</span><span id="stTime"></span><span id="stMsg">차트를 클릭하면 자동선이 그려집니다</span></footer>
-    <div id="helpModal" class="hidden">
-      <div class="help-card">
-        <div class="help-head"><b>추세선·지지/저항선 읽기</b><button id="helpClose">✕</button></div>
-        <table class="help-table">
-          <tr><th>선</th><th>색</th><th>의미</th><th>매매 신호</th></tr>
-          <tr><td>상승 추세선</td><td><span class="cdot" style="background:#089981"></span>녹색</td><td>저점들을 이은 선. 오르면 받쳐주는 <b>지지선</b> 역할</td><td>선 아래로 깨지면 <b>매도·손절</b>, 선에 닿으면 <b>반등 매수 후보</b></td></tr>
-          <tr><td>하락 추세선</td><td><span class="cdot" style="background:#fff"></span>흰색</td><td>고점들을 이은 선. 오르면 막히는 <b>저항선</b> 역할</td><td>선 위로 뚫으면 <b>매수</b>, 선에 닿으면 <b>조정 매도 후보</b></td></tr>
-          <tr><td>S1~S3</td><td><span class="cdot" style="background:#f23645"></span>빨강 실선</td><td>과거에 여러 번 받쳐준 가격대(터치 횟수 표시)</td><td>밑으로 깨지면 다음 S선까지 하락 가능</td></tr>
-          <tr><td>R1~R3</td><td><span class="cdot" style="background:#2962ff"></span>파랑 실선</td><td>과거에 여러 번 막힌 가격대</td><td>위로 뚫으면 다음 R선까지 상승 가능</td></tr>
-          <tr><td>▲ 매수 / ▼ 매도</td><td><span class="cdot" style="background:#f23645"></span>빨강 / <span class="cdot" style="background:#2962ff"></span>파랑</td><td>슈퍼트렌드 방향 반전 지점</td><td>참고용. 단독 진입 근거로 쓰지 말 것</td></tr>
-        </table>
-        <p class="help-foot">선은 클릭 지점 기준 최근 120봉 스윙 고·저점으로 자동 계산됩니다. 눈금 오른쪽 끝 값으로 현재가를 확인하세요.</p>
-      </div>
-    </div>
+    <div class="chart" id="chartMain"></div>
+    <div class="osc-head" id="oscHead"></div>
+    <div class="chart osc" id="chartOsc"></div>
+    <div class="loading hidden" id="loading"><span class="spinner"></span><span id="loadingText">불러오는 중…</span></div>
   </section>
-  <aside id="watch">
-    <h3>관심종목</h3>
-    <div id="wl"></div>
-    <p class="note">클릭하면 활성 차트에 표시됩니다.<br/>코인: BTC ETH XRP SOL ONDO (USDT 기본)<br/>주식: AAPL 005930.KS (심볼 직접 입력)</p>
+
+  <aside class="side">
+    <section class="card price-card">
+      <div class="pc-top"><span id="pcName">—</span><span class="muted" id="pcSrc"></span></div>
+      <div class="pc-price" id="pcPrice">—</div>
+      <div class="pc-sub"><span id="pcChg">—</span><span class="muted" id="pcKrw"></span></div>
+    </section>
+
+    <section class="card signal-card" id="signalCard">
+      <div class="card-head"><h2>현재 판단</h2><span class="pill" id="sigConf">—</span></div>
+      <div class="sig-main" id="sigMain">분석 대기</div>
+      <div class="sig-why muted" id="sigWhy"></div>
+      <dl class="levels" id="sigLevels"></dl>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>시장 국면</h2><span class="pill neutral" id="regName">—</span></div>
+      <dl class="kv" id="regKv"></dl>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>자동 적용 지표</h2><button class="link" id="autoBtn">자동으로 되돌리기</button></div>
+      <p class="muted small" id="autoDesc"></p>
+      <table class="tbl" id="selTbl"></table>
+      <div class="wf" id="wfBox"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>지표 백테스트 순위</h2><span class="muted small" id="btMeta"></span></div>
+      <p class="muted small">행을 누르면 해당 지표와 매매 타점을 차트에 적용합니다. 순위는 검증 구간(최근 60%) 점수 기준입니다.</p>
+      <div class="tbl-wrap"><table class="tbl rank" id="rankTbl"></table></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>관심종목</h2></div>
+      <form class="watch-add" id="watchForm" autocomplete="off"><input id="watchInput" placeholder="심볼 추가" spellcheck="false" aria-label="관심종목 추가"/><button type="submit">추가</button></form>
+      <ul class="watch" id="watchList"></ul>
+    </section>
+
+    <p class="disclaimer">백테스트는 과거 데이터에 대한 결과이며 미래 수익을 보장하지 않습니다. 수수료 0.1%·손절 2.5×ATR·다음 봉 시가 체결 기준으로 계산합니다. 투자 판단의 책임은 본인에게 있습니다.</p>
   </aside>
-</div>
+</main>
+
+<div class="toast hidden" id="toast" role="status"></div>
+
 <script src="vendor/lightweight-charts.js"></script>
-<script src="indicators.js"></script>
-<script src="pane.js"></script>
-<script src="app.js"></script>
+<script src="engine.js?v=20261025"></script>
+<script src="app.js?v=20261025"></script>
 </body>
 </html>
