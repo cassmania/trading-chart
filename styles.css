@@ -132,9 +132,11 @@ button { cursor: pointer; }
 .pane-bar select.p-spd { max-width: 62px; font-size: 11px; }
 .pane.replaying .p-play { color: var(--accent); }
 .pane.replaying .p-stop { color: var(--bad); }
-.rp-info { position: absolute; left: 8px; bottom: 30px; z-index: 6; padding: 3px 8px; border-radius: 6px; font: 600 11px var(--sans); color: #fff; background: var(--accent); pointer-events: none; opacity: .92; }
+.rp-info { position: absolute; right: 74px; top: 6px; z-index: 6; padding: 3px 8px; border-radius: 6px; font: 600 11px var(--sans); color: #fff; background: var(--accent); pointer-events: none; opacity: .92; }
 .rp-info.hidden { display: none; }
+.pane-bar select.p-unit { max-width: 72px; font-size: 11px; }
 .pane.tiny .pane-bar select.p-spd { max-width: 48px; }
+.pane.tiny .pane-bar select.p-unit { max-width: 52px; }
 .pane-body { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .pane.no-osc .chart.osc, .pane.no-osc .osc-head { display: none; }
 .pane.compact .legend { padding: 3px 7px; top: 6px; left: 8px; }
