@@ -352,6 +352,61 @@ function chartOptions(isOsc) {
     localization: { locale: 'ko-KR', timeFormatter: t => fmtTime(t), priceFormatter: isOsc ? oscFmt : v => fmtPx(v) }
   };
 }
+/* ---- 지지·저항 구간 박스 (트레이딩뷰 사각형처럼 파란색) ----
+   스윙 고점·저점(좌우 k봉 극값)을 ATR 기준으로 묶어, 두 번 이상 반응한 가격대만 남긴다. */
+function srZones(bars, look = 400, k = 5) {
+  const b = bars.slice(-look), n = b.length;
+  if (n < 2 * k + 20) return [];
+  let tr = 0;
+  for (let i = 1; i < n; i++) tr += Math.max(b[i].high, b[i - 1].close) - Math.min(b[i].low, b[i - 1].close);
+  const atr = tr / (n - 1), tol = atr * 0.6;
+  const piv = [];
+  for (let i = k; i < n - k; i++) {
+    let hi = true, lo = true;
+    for (let j = i - k; j <= i + k; j++) { if (b[j].high > b[i].high) hi = false; if (b[j].low < b[i].low) lo = false; }
+    if (hi) piv.push({ p: b[i].high, t: b[i].time });
+    if (lo) piv.push({ p: b[i].low, t: b[i].time });
+  }
+  piv.sort((x, y) => x.p - y.p);
+  const zs = [];
+  for (const q of piv) {
+    const z = zs[zs.length - 1];
+    if (z && q.p - z.hi <= tol && q.p - z.lo <= tol * 2) { z.hi = q.p; z.n++; z.t = Math.min(z.t, q.t); }
+    else zs.push({ lo: q.p, hi: q.p, n: 1, t: q.t });
+  }
+  return zs.filter(z => z.n >= 2)
+    .sort((x, y) => y.n - x.n).slice(0, 6)
+    .map(z => { const pad = Math.max(0, atr * 0.25 - (z.hi - z.lo) / 2); return { lo: z.lo - pad, hi: z.hi + pad, n: z.n, t: z.t }; });
+}
+
+// 캔들 뒤에 박스를 그리는 시리즈 primitive (첫 반응 봉부터 오른쪽 끝까지)
+class ZoneBoxes {
+  constructor() { this.zones = []; }
+  attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.req = requestUpdate; }
+  detached() { this.chart = null; }
+  set(zones) { this.zones = zones; if (this.req) this.req(); }
+  updateAllViews() {}
+  paneViews() {
+    return [{ zOrder: () => 'bottom', renderer: () => ({ draw: target => {
+      if (!this.chart || !this.zones.length) return;
+      const ts = this.chart.timeScale(), s = this.series;
+      target.useBitmapCoordinateSpace(({ context: c, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+        for (const z of this.zones) {
+          const y1 = s.priceToCoordinate(z.hi), y2 = s.priceToCoordinate(z.lo);
+          if (y1 == null || y2 == null) continue;
+          const x = Math.max(0, Math.round((ts.timeToCoordinate(z.t) ?? 0) * hr));
+          const top = Math.round(Math.min(y1, y2) * vr), h = Math.max(Math.round(Math.abs(y2 - y1) * vr), Math.round(4 * vr));
+          c.fillStyle = 'rgba(41, 98, 255, 0.20)';
+          c.fillRect(x, top, bitmapSize.width - x, h);
+          c.lineWidth = Math.max(2, Math.round(2 * vr));
+          c.strokeStyle = '#2962ff';
+          c.strokeRect(x, top, bitmapSize.width - x, h);
+        }
+      });
+    } }) }];
+  }
+}
+
 function priceFormatFor(v) { const d = decimalsFor(v); return { type: 'price', precision: d, minMove: 1 / 10 ** d }; }
 function confidence(st) {
   if (!st || st.trades < 5) return { label: '표본 부족', cls: 'warn' };
@@ -422,6 +477,8 @@ class Pane {
     const p = palette();
     this.candle = this.main.addCandlestickSeries({ upColor: p.up, downColor: p.down, borderUpColor: p.up, borderDownColor: p.down, wickUpColor: p.up, wickDownColor: p.down, priceLineColor: p.accent, priceLineStyle: 2 });
     this.volume = this.main.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
+    this.zoneBox = new ZoneBoxes();
+    this.candle.attachPrimitive(this.zoneBox);
     this.main.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
     this.candle.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.18 } });
     let syncing = false;
@@ -830,6 +887,13 @@ class Pane {
       this.lines.push(this.candle.createPriceLine({ price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title: this.dense ? '' : title }));
     };
     if (vp) { add(vp.poc, p.accent, 'POC', 0); if (!this.dense) { add(vp.vah, p.gray, 'VAH'); add(vp.val, p.gray, 'VAL'); } }
+    // 지지 구간 박스 + 현재가 바로 아래 지지선은 진한 파란 실선
+    const last = this.bars[this.bars.length - 1].close;
+    this.zones = srZones(this.bars.slice(0, -1));
+    this.zoneBox.set(this.zones);
+    // 현재가가 구간 위면 구간 윗선, 구간 안이면 아랫선이 지켜야 할 지지선
+    this.sup = this.zones.filter(z => z.lo < last).sort((x, y) => y.lo - x.lo)[0] || null;
+    if (this.sup) { this.sup.line = this.sup.hi < last ? this.sup.hi : this.sup.lo; add(this.sup.line, '#2962ff', '지지', 0, 3); }
     const lv = this.levels(v);
     if (lv) {
       add(lv.entry, lv.dir === 1 ? p.buy : p.sell, lv.dir === 1 ? '진입' : '숏 진입', 0, 2);
@@ -1036,6 +1100,8 @@ function renderSide() {
     kv += '<dt>근접 지지 매물대</dt><dd>' + (sup ? fmtPx(sup.price) + '<small>' + fmtPct((sup.price - last.close) / last.close) + '</small>' : '—') + '</dd>';
     kv += '<dt>근접 저항 매물대</dt><dd>' + (res ? fmtPx(res.price) + '<small>' + fmtPct((res.price - last.close) / last.close) + '</small>' : '—') + '</dd>';
   }
+  const zs = pane.sup;
+  kv += '<dt>지지 구간 (파란 박스)</dt><dd>' + (zs ? fmtPx(zs.lo) + ' ~ ' + fmtPx(zs.hi) + '<small>' + fmtPct((zs.line - last.close) / last.close) + ' · 반응 ' + zs.n + '회</small>' : '—') + '</dd>';
   $('regKv').innerHTML = kv;
 
   // 자동 적용
