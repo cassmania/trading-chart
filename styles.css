@@ -326,3 +326,23 @@ button { cursor: pointer; }
 .fi.new .fi-t { color: var(--accent); }
 .fi-lv { color: var(--muted); font-size: 12px; }
 .fi-lv b { color: var(--text); font-weight: 600; }
+
+/* ---------- 휴대폰 전체 화면 · 가로 회전 ---------- */
+.p-rot { display: none !important; font-size: 11px !important; font-weight: 600; }
+body.full-open { overflow: hidden; }
+.pane.full {
+  position: fixed; inset: 0; z-index: 1000; width: 100vw; height: 100vh; height: 100dvh;
+  border: 0; border-radius: 0; box-shadow: none; touch-action: none;
+}
+.pane.full .p-rot { display: inline-flex !important; align-items: center; justify-content: center; }
+.pane.full .chart.osc { flex-basis: 20%; }
+.toast { z-index: 1100; }
+/* 실제 가로 화면이거나 CSS로 돌린 경우 도구 줄을 한 줄로 */
+@media (orientation: landscape) { .pane.full .p-tools { flex-basis: auto; margin-left: auto; } }
+@media (orientation: portrait) {
+  .pane.full.rot {
+    inset: 0 auto auto 100vw; width: 100vh; width: 100dvh; height: 100vw;
+    transform: rotate(90deg); transform-origin: top left;
+  }
+  .pane.full.rot .p-tools { flex-basis: auto; margin-left: auto; }
+}

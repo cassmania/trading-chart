@@ -487,7 +487,8 @@ class Pane {
       + '<button class="p-rp p-stop" title="리플레이 정지 (실시간으로 복귀)" aria-label="리플레이 정지" disabled>■</button>'
       + '<select class="p-spd" title="리플레이 속도 (봉 1개당 시간)" aria-label="리플레이 속도">' + RP_SPEEDS.map(([ms, l]) => '<option value="' + ms + '"' + (ms === state.rpSpeed ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
       + '</span>'
-      + '<button class="p-max" title="이 차트 크게 보기" aria-label="크게 보기">⤢</button>'
+      + '<button class="p-rp p-rot" title="가로로 보기 (화면 회전)" aria-label="가로로 보기">가로</button>'
+      + '<button class="p-max" title="이 차트 크게 보기 (휴대폰은 전체 화면)" aria-label="크게 보기">⤢</button>'
       + '</span></div>'
       + '<div class="pane-body">'
       + '<div class="rp-info hidden"></div>'
@@ -497,7 +498,7 @@ class Pane {
       + '</div>';
     const q = s => el.querySelector(s);
     this.el = el;
-    this.$ = { sym: q('.p-sym'), tf: q('.p-tf'), ex: q('.p-ex'), live: q('.p-live'), px: q('.p-px'), ch: q('.p-ch'), sig: q('.p-sig'), max: q('.p-max'),
+    this.$ = { sym: q('.p-sym'), tf: q('.p-tf'), ex: q('.p-ex'), live: q('.p-live'), px: q('.p-px'), ch: q('.p-ch'), sig: q('.p-sig'), max: q('.p-max'), rot: q('.p-rot'),
       lgSym: q('.lg-sym'), lgTf: q('.lg-tf'), lg2: q('.lg-row2'), lg3: q('.lg-row3'), main: q('.chart.main'), osc: q('.chart.osc'), oscHead: q('.osc-head'), loading: q('.loading'), lTxt: q('.l-txt'),
       play: q('.p-play'), stop: q('.p-stop'), spd: q('.p-spd'), unit: q('.p-unit'), rpInfo: q('.rp-info') };
     this.fillUnits();
@@ -508,6 +509,7 @@ class Pane {
     q('.p-zi').addEventListener('click', () => this.zoom(0.7));
     q('.p-zo').addEventListener('click', () => this.zoom(1 / 0.7));
     q('.p-zr').addEventListener('click', () => this.fitRecent());
+    this.$.rot.addEventListener('click', ev => { ev.stopPropagation(); toggleRotate(this); });
     this.$.sym.value = this.sym;
     this.$.tf.value = this.tf;
     this.$.sym.addEventListener('keydown', e => { if (e.key === 'Enter') { this.$.sym.blur(); this.load(this.$.sym.value); } if (e.key === 'Escape') { this.$.sym.value = this.sym; this.$.sym.blur(); } });
@@ -678,6 +680,7 @@ class Pane {
   }
 
   destroy() {
+    if (fullPane === this) setFull(this, false);
     if (this.ctrl) this.ctrl.abort();
     clearInterval(this.poll); clearTimeout(this.analyzeTimer);
     if (this.rp) { clearInterval(this.rp.timer); if (this.rp.ctrl) this.rp.ctrl.abort(); }
@@ -1085,6 +1088,7 @@ function setActive(i, force) {
 }
 
 function toggleMax(pane) {
+  if (pane.el.classList.contains('full') || PHONE.matches) return setFull(pane, !pane.el.classList.contains('full'));
   const grid = $('grid');
   const on = !pane.el.classList.contains('max');
   panes.forEach(p => p.el.classList.remove('max'));
@@ -1095,6 +1099,92 @@ function toggleMax(pane) {
   setActive(pane.idx);
   setTimeout(() => pane.fitRecent(), 50);
 }
+
+/* ---- 휴대폰 전체 화면 · 가로 회전 ----
+   ⤢: 차트 하나를 화면 전체에 띄우고(가능하면 브라우저 주소창까지 숨기는 Fullscreen API) ,
+   가로: 안드로이드는 화면 방향을 가로로 고정, 그게 안 되는 기기(아이폰 등)는 차트를 CSS로 90° 돌린다. */
+const PHONE = window.matchMedia('(max-width: 900px)'), PORTRAIT = window.matchMedia('(orientation: portrait)');
+let fullPane = null;
+function setFull(pane, on, rotate = false) {
+  const el = pane.el;
+  if (on) {
+    if (fullPane && fullPane !== pane) setFull(fullPane, false);
+    fullPane = pane;
+    el.classList.add('full');
+    el.classList.toggle('rot', rotate);
+    document.body.classList.add('full-open');
+    pane.$.max.textContent = '⤡';
+    pane.$.rot.textContent = rotate ? '세로' : '가로';
+    pane.setDensity(1);
+    for (const c of [pane.main, pane.osc]) c.applyOptions({ handleScroll: { vertTouchDrag: true } }); // 전체 화면에선 모든 손가락 동작을 차트가 받음
+    setActive(pane.idx);
+    const d = document.documentElement;
+    if (!document.fullscreenElement && d.requestFullscreen) d.requestFullscreen({ navigationUI: 'hide' }).then(() => { pane.fs = true; lockLandscape(pane); }, () => {});
+    else lockLandscape(pane);
+  } else {
+    el.classList.remove('full', 'rot');
+    if (fullPane === pane) fullPane = null;
+    document.body.classList.remove('full-open');
+    pane.$.max.textContent = '⤢';
+    pane.$.rot.textContent = '가로';
+    pane.setDensity(state.layout);
+    for (const c of [pane.main, pane.osc]) c.applyOptions({ handleScroll: { vertTouchDrag: false } });
+    try { screen.orientation.unlock(); } catch (e) {}
+    if (pane.fs && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    pane.fs = false;
+  }
+  setTimeout(() => pane.fitRecent(), 120);
+}
+// 실제 화면 방향 고정이 되면 CSS 회전은 세로 화면에서만 걸리므로 자연히 꺼진다
+function lockLandscape(pane) {
+  if (!pane.el.classList.contains('rot')) return;
+  try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) {}
+}
+function toggleRotate(pane) {
+  if (!pane.el.classList.contains('full')) return setFull(pane, true, true);
+  const on = !pane.el.classList.contains('rot');
+  pane.el.classList.toggle('rot', on);
+  pane.$.rot.textContent = on ? '세로' : '가로';
+  if (on) lockLandscape(pane); else try { screen.orientation.unlock(); } catch (e) {}
+  setTimeout(() => pane.fitRecent(), 120);
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && fullPane && fullPane.fs) setFull(fullPane, false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && fullPane) setFull(fullPane, false); });
+
+/* CSS로 90° 돌린 차트에서 터치·마우스 좌표 보정:
+   라이브러리는 (clientX - 요소 왼쪽)으로 위치를 계산하므로, 돌린 차트 안에서는
+   이벤트 좌표와 요소 위치를 '돌리기 전 차트' 기준으로 바꿔 준다. */
+const rotOn = () => !!fullPane && fullPane.el.classList.contains('rot') && PORTRAIT.matches;
+// 돌린 차트 안 요소의 위치·크기를 '돌리기 전' 기준(차트 왼쪽 위 = 0,0)으로. 아니면 null
+function unrotatedRect(node) {
+  if (!rotOn() || node === fullPane.el || !fullPane.el.contains(node) || !(node instanceof HTMLElement)) return null;
+  let x = 0, y = 0, el = node;
+  while (el && el !== fullPane.el) { x += el.offsetLeft; y += el.offsetTop; el = el.offsetParent; }
+  if (el !== fullPane.el) return null;
+  const w = node.offsetWidth, h = node.offsetHeight;
+  return { left: x, top: y, right: x + w, bottom: y + h, width: w, height: h, x, y, toJSON() { return this; } };
+}
+const origRect = Element.prototype.getBoundingClientRect, origRects = Element.prototype.getClientRects;
+Element.prototype.getBoundingClientRect = function () { return unrotatedRect(this) || origRect.call(this); };
+// 캔버스 실제 픽셀 크기도 이 값으로 계산한다(라이브러리가 getClientRects × 화면 배율 사용)
+Element.prototype.getClientRects = function () { const r = unrotatedRect(this); return r ? [r] : origRects.call(this); };
+// 돌린 요소에서는 브라우저가 캔버스 실제 픽셀 크기(devicePixelContentBoxSize)를 회전 후 기준으로 알려 줘
+// 차트가 찌그러진다. 차트를 만들기 전에 이 값을 없애 라이브러리가 'CSS 크기 × 화면 배율' 방식을 쓰게 한다.
+// ponytail: 소수 배율 화면에서 아주 약간 덜 선명할 수 있음 — 문제 되면 회전 중에만 바꾸는 방식으로.
+if (window.ResizeObserverEntry) try { delete ResizeObserverEntry.prototype.devicePixelContentBoxSize; } catch (e) {}
+function remapPoint(o, proto, r) {
+  const gx = Object.getOwnPropertyDescriptor(proto, 'clientX'), gy = Object.getOwnPropertyDescriptor(proto, 'clientY');
+  if (!gx || !gx.get || !gy || !gy.get) return;
+  const X = () => gy.get.call(o) - r.top, Y = () => r.right - gx.get.call(o); // 90° 시계 방향 회전의 역변환
+  for (const [k, f] of [['clientX', X], ['clientY', Y], ['pageX', X], ['pageY', Y]]) Object.defineProperty(o, k, { get: f, configurable: true });
+}
+function remapEvent(e) {
+  if (!rotOn() || !(e.target instanceof Node) || !fullPane.el.contains(e.target)) return;
+  const r = origRect.call(fullPane.el);
+  if (e.touches) { for (const list of [e.touches, e.changedTouches, e.targetTouches]) for (let i = 0; i < list.length; i++) remapPoint(list[i], Touch.prototype, r); }
+  else remapPoint(e, MouseEvent.prototype, r);
+}
+for (const t of ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'wheel', 'contextmenu']) document.addEventListener(t, remapEvent, { capture: true, passive: true });
 
 function setQuote(q, sym, pane) {
   if (state.quote === q) { if (pane && sym) pane.load(sym); return; }
