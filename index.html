@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="styles.css?v=20261106a"/>
+<link rel="stylesheet" href="styles.css?v=20261106b"/>
 </head>
 <body>
 <header class="top">
@@ -62,6 +62,17 @@
       <dl class="levels" id="sigLevels"></dl>
     </section>
 
+    <section class="card feed-card">
+      <div class="card-head"><h2><span class="feed-ico" aria-hidden="true">!</span>바이낸스 실시간 매매 신호</h2><span class="feed-state" id="feedState">준비 중</span></div>
+      <div class="feed-bar">
+        <div class="seg seg-sm" id="feedTf" role="group" aria-label="감시 봉"><button data-tf="m15">15분</button><button data-tf="h1">1시간</button><button data-tf="h4">4시간</button><button data-tf="D">일봉</button></div>
+        <span class="pill" id="feedCount">신호 0</span>
+        <button class="link" id="feedClear">지우기</button>
+      </div>
+      <p class="muted small feed-note"><span id="feedMeta"></span> · 자체 1~3위 지표를 바이낸스 확정봉마다 판정 · 누르면 그 코인·봉·지표로 차트 전환</p>
+      <div class="feed" id="feed" aria-live="polite"><div class="feed-empty muted small">준비 중…</div></div>
+    </section>
+
     <section class="card">
       <div class="card-head"><h2>시장 국면</h2><span class="pill neutral" id="regName">—</span></div>
       <dl class="kv" id="regKv"></dl>
@@ -93,8 +104,8 @@
 <div class="toast hidden" id="toast" role="status"></div>
 
 <script src="vendor/lightweight-charts.js"></script>
-<script src="engine.js?v=20261106a"></script>
-<script src="custom.js?v=20261106a"></script>
-<script src="app.js?v=20261106a"></script>
+<script src="engine.js?v=20261106b"></script>
+<script src="custom.js?v=20261106b"></script>
+<script src="app.js?v=20261106b"></script>
 </body>
 </html>

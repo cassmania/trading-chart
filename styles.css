@@ -292,3 +292,37 @@ button { cursor: pointer; }
 .pane.tiny .pane-bar .p-px { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .pane.tiny .pane-bar .p-sig { padding: 2px 6px; flex: 0 0 auto; }
 .pane.tiny .lg-row2 { display: none; }
+
+/* ---------- 실시간 매매 신호 피드 ---------- */
+.feed-ico { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: #fff; font: 700 12px var(--sans); vertical-align: 1px; }
+.feed-state { font-size: 12px; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.feed-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .5; }
+.feed-state.on { color: var(--good); }
+.feed-state.on::before { background: var(--good); opacity: 1; animation: pulse 2s infinite; box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent); }
+.feed-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.feed-bar .link { margin-left: auto; }
+.seg-sm button { padding: 3px 8px; font-size: 12px; }
+.feed-note { margin: 8px 0; }
+.feed { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.feed-empty { padding: 18px 0; text-align: center; }
+.fi {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; padding: 8px 10px 8px 12px;
+  border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 10px; background: var(--surface); font-size: 12.5px;
+}
+.fi:hover { background: var(--surface-2); }
+.fi.buy { border-left-color: var(--buy); }
+.fi.sell { border-left-color: var(--sell); }
+.fi.stop { border-left-color: var(--bad); }
+.fi.new { box-shadow: 0 0 0 2px var(--accent-soft); }
+.fi-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fi-sym { font-weight: 600; }
+.fi-tf { color: var(--muted); font-size: 11.5px; }
+.fi-badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.fi.buy .fi-badge { background: color-mix(in srgb, var(--buy) 14%, transparent); color: var(--buy); }
+.fi.sell .fi-badge { background: color-mix(in srgb, var(--sell) 14%, transparent); color: var(--sell); }
+.fi.stop .fi-badge { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.fi-ind { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fi-t { margin-left: auto; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.fi.new .fi-t { color: var(--accent); }
+.fi-lv { color: var(--muted); font-size: 12px; }
+.fi-lv b { color: var(--text); font-weight: 600; }
