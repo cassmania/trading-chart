@@ -93,6 +93,11 @@ button { cursor: pointer; }
   display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px;
   padding: 16px 20px 20px; height: calc(100vh - 57px);
 }
+/* 데스크톱: 헤더가 두 줄로 접혀도 차트 영역이 화면 높이에 맞도록 */
+@media (min-width: 901px) {
+  body { display: flex; flex-direction: column; height: 100vh; }
+  .layout { flex: 1 1 auto; height: auto; min-height: 0; }
+}
 .grid-wrap { min-height: 0; min-width: 0; }
 .grid { display: grid; gap: 10px; height: 100%; grid-template-columns: 1fr; grid-auto-rows: minmax(0, 1fr); }
 .grid.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -109,9 +114,14 @@ button { cursor: pointer; }
 }
 .grid:not(.n1) .pane.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow); }
 .pane-bar {
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 6px 8px; border-bottom: 1px solid var(--line);
   font-size: 12px; min-width: 0;
 }
+.pane-bar .badge { white-space: nowrap; flex: 0 0 auto; }
+.p-tools { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.p-tools .zm { display: inline-flex; gap: 1px; padding-right: 4px; border-right: 1px solid var(--line); }
+.seg-l { align-self: center; padding: 0 6px 0 8px; font-size: 12px; font-weight: 600; color: var(--accent); }
+.rank tr.mine .nm { color: var(--accent); }
 .pane-bar .p-sym {
   width: 76px; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; background: var(--surface-2);
   font-weight: 600; outline: none; text-transform: uppercase;
@@ -250,7 +260,21 @@ button { cursor: pointer; }
   .layout { grid-template-columns: minmax(0, 1fr) 330px; }
 }
 @media (max-width: 900px) {
-  .top { padding: 10px 16px; gap: 8px; }
+  /* 모바일: 헤더가 화면을 덮지 않게 고정 해제, 차트 도구는 둘째 줄에 전부 보이게 */
+  .top { position: relative; padding: 10px 16px; gap: 8px; }
+  .p-tools { flex-basis: 100%; flex-wrap: wrap; justify-content: space-between; }
+  .pane-bar .p-ex { display: none; }
+  .pane-bar .p-sym { width: 56px; }
+  .pane-bar select.p-tf { max-width: 74px; }
+  .pane-bar .p-rp, .pane-bar .p-max { width: 28px; height: 30px; font-size: 14px; }
+  .pane-bar select, .pane-bar .p-sym { height: 30px; }
+  .pane-bar select.p-unit { max-width: 74px; font-size: 12px; }
+  .pane-bar select.p-spd { max-width: 62px; font-size: 12px; }
+  .legend { top: 6px; left: 8px; padding: 4px 8px; max-width: calc(100% - 96px); }
+  .lg-row1 { font-size: 14px; }
+  .lg-row2, .lg-row3 { font-size: 11px; }
+  .lg-row3 { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+  .rp-info { top: auto; bottom: 8px; right: 70px; }
   .brand { width: 100%; margin: 0; padding-right: 44px; }
   .icon { position: absolute; top: 8px; right: 16px; }
   .search { flex: 1 1 100%; }
@@ -258,8 +282,8 @@ button { cursor: pointer; }
   .seg { overflow-x: auto; max-width: 100%; }
   .layout { display: flex; flex-direction: column; height: auto; padding: 12px 16px 16px; }
   .grid-wrap { height: auto; }
-  .grid, .grid.n2, .grid.n3, .grid.n4, .grid.n6, .grid.n8 { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-rows: 64vh; height: auto; }
-  .grid:not(.n1) { grid-auto-rows: 440px; }
+  .grid, .grid.n2, .grid.n3, .grid.n4, .grid.n6, .grid.n8 { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-rows: max(480px, 70vh); height: auto; }
+  .grid:not(.n1) { grid-auto-rows: 500px; }
   .side { overflow: visible; }
 }
 .pane.tiny .pane-bar { gap: 4px; padding: 5px 6px; }

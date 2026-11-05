@@ -53,4 +53,16 @@ assert.ok(Number.isFinite(ab.adaptive.stats.score));
 const vp = E.volumeProfile(b, 300, 48);
 assert.ok(vp.val <= vp.poc && vp.poc <= vp.vah, 'VAL ≤ POC ≤ VAH');
 
+// 6) 자체 지표: 미래 데이터 미사용 + 진입은 직전 봉 신호의 다음 봉 시가
+const Cu = require('../custom.js');
+const cu = Cu.analyze(b, ab, { mode: 'both' });
+for (const d of Cu.LIST) {
+  const f = d.build(b), t = d.build(b.slice(0, 400));
+  for (const k of ['long', 'xl', 'short', 'xs']) for (let i = 0; i < 400; i++) assert.equal(t[k][i], f[k][i], d.name + ' ' + k + '가 미래 데이터에 의존함');
+  for (const tr of cu[d.id].trades) {
+    assert.equal(tr.entry, b[tr.entryIdx].open, '자체 지표 진입은 다음 봉 시가');
+    assert.ok(tr.dir === 1 ? f.long[tr.entryIdx - 1] : f.short[tr.entryIdx - 1], d.name + ' 직전 봉 진입 신호 존재');
+  }
+}
+
 console.log('engine tests passed');

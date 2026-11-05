@@ -1,7 +1,9 @@
 /* 트레이딩 챠트 — 멀티차트(최대 8분할) · 실시간 데이터 · 자동 지표 적용 */
 'use strict';
-const E = window.Engine;
+const E = window.Engine, C = window.Custom;
 const $ = id => document.getElementById(id);
+const stratName = id => (C.BY_ID[id] || E.STRAT_BY_ID[id] || { name: id }).name;
+const VIEWS = ['c1', 'c2', 'c3', 'auto'];
 
 /* ===================== 상수 · 상태 ===================== */
 const STORE_KEY = 'tc2-state';
@@ -23,7 +25,7 @@ const BARS = 1000;
 const RP_SPEEDS = [[10, '0.01초'], [30, '0.03초'], [100, '0.1초'], [250, '0.25초'], [500, '0.5초'], [1000, '1초'], [3000, '3초'], [10000, '10초'], [30000, '30초'], [60000, '1분'], [300000, '5분'], [900000, '15분'], [3600000, '1시간']];
 
 const state = {
-  quote: 'USDT', mode: 'long', theme: null, layout: 1, active: 0, rpSpeed: 500, rpUnit: 'bar',
+  quote: 'USDT', mode: 'long', theme: null, layout: 1, active: 0, rpSpeed: 500, rpUnit: 'bar', ind: 'c1',
   panes: DEFAULT_SYMS.map(s => ({ sym: s, tf: 'h4' })),
   watch: DEFAULT_WATCH.slice()
 };
@@ -35,6 +37,7 @@ try {
     if (Number.isInteger(s.active)) state.active = s.active;
     if (RP_SPEEDS.some(([ms]) => ms === s.rpSpeed)) state.rpSpeed = s.rpSpeed;
     if (['bar', 'h1', 'm1', 's1'].includes(s.rpUnit)) state.rpUnit = s.rpUnit;
+    if (VIEWS.includes(s.ind)) state.ind = s.ind;
     if (Array.isArray(s.watch) && s.watch.length) state.watch = s.watch.filter(x => typeof x === 'string').slice(0, 30);
     if (Array.isArray(s.panes)) s.panes.slice(0, 8).forEach((p, i) => { if (p && typeof p.sym === 'string') state.panes[i] = { sym: p.sym, tf: TF[p.tf] ? p.tf : 'h4' }; });
     else if (typeof s.sym === 'string') state.panes[0] = { sym: s.sym, tf: TF[s.tf] ? s.tf : 'h4' }; // 이전 버전 저장값
@@ -48,7 +51,7 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       quote: state.quote, mode: state.mode, theme: state.theme, layout: state.layout, active: state.active,
-      panes: state.panes, watch: state.watch, rpSpeed: state.rpSpeed, rpUnit: state.rpUnit
+      panes: state.panes, watch: state.watch, rpSpeed: state.rpSpeed, rpUnit: state.rpUnit, ind: state.ind
     }));
   } catch (e) {}
 }
@@ -348,6 +351,7 @@ function chartOptions(isOsc) {
     grid: { vertLines: { color: grid }, horzLines: { color: grid } },
     rightPriceScale: { borderColor: p.line },
     timeScale: { borderColor: p.line, timeVisible: true, secondsVisible: false, rightOffset: 6, tickMarkFormatter: tickFormatter },
+    handleScroll: { vertTouchDrag: false }, // 모바일: 차트 위 세로 스와이프는 페이지 스크롤로
     crosshair: { mode: 0, vertLine: { color: p.muted, labelBackgroundColor: p.accent, style: 3 }, horzLine: { color: p.muted, labelBackgroundColor: p.accent, style: 3 } },
     localization: { locale: 'ko-KR', timeFormatter: t => fmtTime(t), priceFormatter: isOsc ? oscFmt : v => fmtPx(v) }
   };
@@ -407,6 +411,37 @@ class ZoneBoxes {
   }
 }
 
+/* ---- 자동 추세선 ----
+   최근 스윙 저점 2개(지지)·고점 2개(저항)를 잇고, 그 뒤 종가가 한 번도 뚫지 않은 선만 현재 봉까지 연장한다.
+   가장 최근 피벗부터 거슬러 올라가 처음 성립하는 선 하나씩. */
+function trendLines(bars, k = 5, look = 300) {
+  const n = bars.length, s = Math.max(0, n - look);
+  if (n - s < 4 * k) return [];
+  const lows = [], highs = [];
+  for (let i = s + k; i < n - k; i++) {
+    let lo = true, hi = true;
+    for (let j = i - k; j <= i + k; j++) { if (bars[j].low < bars[i].low) lo = false; if (bars[j].high > bars[i].high) hi = false; }
+    if (lo) lows.push(i);
+    if (hi) highs.push(i);
+  }
+  // 현재가에서 평균 봉 길이 4배 넘게 떨어진 선은 쓸모가 없어 제외
+  let rng = 0;
+  for (let i = n - 50; i < n; i++) rng += bars[Math.max(0, i)].high - bars[Math.max(0, i)].low;
+  const far = 4 * rng / 50, lastC = bars[n - 1].close;
+  const fit = (piv, key, sup) => {
+    for (let b2 = piv.length - 1; b2 >= Math.max(1, piv.length - 4); b2--) {
+      for (let a1 = b2 - 1; a1 >= Math.max(0, b2 - 6); a1--) {
+        const i1 = piv[a1], i2 = piv[b2], p1 = bars[i1][key], m = (bars[i2][key] - p1) / (i2 - i1), end = p1 + m * (n - 1 - i1);
+        let ok = end > 0 && Math.abs(end - lastC) <= far;
+        for (let j = i1 + 1; j < n && ok; j++) { const y = p1 + m * (j - i1); if (sup ? bars[j].close < y : bars[j].close > y) ok = false; }
+        if (ok) return { i1, p1, m, sup, end };
+      }
+    }
+    return null;
+  };
+  return [fit(lows, 'low', true), fit(highs, 'high', false)].filter(Boolean);
+}
+
 function priceFormatFor(v) { const d = decimalsFor(v); return { type: 'price', precision: d, minMove: 1 / 10 ** d }; }
 function confidence(st) {
   if (!st || st.trades < 5) return { label: '표본 부족', cls: 'warn' };
@@ -419,7 +454,7 @@ function confidence(st) {
 class Pane {
   constructor(idx, cfg) {
     this.idx = idx; this.sym = cfg.sym; this.tf = cfg.tf;
-    this.bars = []; this.source = null; this.analysis = null; this.view = 'auto'; this.dayRef = null; this.vp = null;
+    this.bars = []; this.source = null; this.analysis = null; this.view = state.ind; this.dayRef = null; this.vp = null; this.trends = [];
     this.seq = 0; this.ctrl = null; this.poll = null; this.analyzeTimer = null;
     this.overlay = []; this.oscS = []; this.lines = [];
     this.build();
@@ -435,6 +470,8 @@ class Pane {
       + '<span class="badge p-ex">—</span><span class="live p-live"></span>'
       + '<span class="p-px">—</span><span class="p-ch"></span>'
       + '<span class="pill p-sig">—</span>'
+      + '<span class="p-tools">'
+      + '<span class="zm"><button class="p-rp p-zo" title="차트 축소 (더 많은 봉)" aria-label="차트 축소">−</button><button class="p-rp p-zi" title="차트 확대 (더 적은 봉)" aria-label="차트 확대">+</button><button class="p-rp p-zr" title="최근 봉에 맞춤" aria-label="화면 맞춤">⟲</button></span>'
       + '<span class="rp-ctl">'
       + '<select class="p-unit" title="리플레이 데이터 단위: 봉 단위는 봉을 하나씩, 초·분·시간봉은 그 데이터로 현재 봉이 만들어지는 과정을 그림" aria-label="리플레이 단위"></select>'
       + '<button class="p-rp p-play" title="리플레이 재생 (차트를 클릭한 봉부터)" aria-label="리플레이 재생">▶</button>'
@@ -442,7 +479,7 @@ class Pane {
       + '<select class="p-spd" title="리플레이 속도 (봉 1개당 시간)" aria-label="리플레이 속도">' + RP_SPEEDS.map(([ms, l]) => '<option value="' + ms + '"' + (ms === state.rpSpeed ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
       + '</span>'
       + '<button class="p-max" title="이 차트 크게 보기" aria-label="크게 보기">⤢</button>'
-      + '</div>'
+      + '</span></div>'
       + '<div class="pane-body">'
       + '<div class="rp-info hidden"></div>'
       + '<div class="legend"><div class="lg-row1"><b class="lg-sym">—</b><span class="lg-tf"></span></div><div class="lg-row2"></div><div class="lg-row3"></div></div>'
@@ -459,6 +496,9 @@ class Pane {
     this.$.play.addEventListener('click', ev => { ev.stopPropagation(); this.rpToggle(); });
     this.$.stop.addEventListener('click', ev => { ev.stopPropagation(); this.rpStop(); });
     this.$.spd.addEventListener('change', () => { state.rpSpeed = +this.$.spd.value; save(); if (this.rp && !this.rp.paused) this.rpResume(); });
+    q('.p-zi').addEventListener('click', () => this.zoom(0.7));
+    q('.p-zo').addEventListener('click', () => this.zoom(1 / 0.7));
+    q('.p-zr').addEventListener('click', () => this.fitRecent());
     this.$.sym.value = this.sym;
     this.$.tf.value = this.tf;
     this.$.sym.addEventListener('keydown', e => { if (e.key === 'Enter') { this.$.sym.blur(); this.load(this.$.sym.value); } if (e.key === 'Escape') { this.$.sym.value = this.sym; this.$.sym.blur(); } });
@@ -670,7 +710,7 @@ class Pane {
     try {
       const { data, src } = await loadHistory(parsed.base, state.quote, this.tf, ctrl.signal);
       if (seq !== this.seq) return;
-      this.sym = parsed.base; this.source = src; this.bars = data; this.dayRef = null; this.view = 'auto';
+      this.sym = parsed.base; this.source = src; this.bars = data; this.dayRef = null; this.view = state.ind;
       this.persist();
       this.$.sym.value = this.sym;
       this.$.ex.textContent = src.exch;
@@ -700,6 +740,14 @@ class Pane {
     const w = this.$.main.clientWidth || 600;
     const n = Math.max(50, Math.min(220, Math.floor(w / 6)));
     this.main.timeScale().setVisibleLogicalRange({ from: Math.max(0, this.bars.length - n), to: this.bars.length + 4 });
+  }
+
+  // 오른쪽 끝을 고정하고 보이는 봉 수를 f배로 (f<1 확대, f>1 축소)
+  zoom(f) {
+    const ts = this.main.timeScale(), r = ts.getVisibleLogicalRange();
+    if (!r) return;
+    const w = Math.max(12, Math.min(this.bars.length + 60, (r.to - r.from) * f));
+    ts.setVisibleLogicalRange({ from: r.to - w, to: r.to });
   }
 
   startOkxPoll() {
@@ -758,14 +806,21 @@ class Pane {
 
   runAnalysis() {
     if (this.bars.length < 120) { this.analysis = null; this.clearOverlays(); this.$.sig.textContent = '데이터 부족'; this.$.sig.className = 'pill p-sig'; return; }
-    try { this.analysis = E.analyze(this.bars, { mode: state.mode }); } // 형성 중인 마지막 봉은 신호에서 제외
-    catch (e) { console.error(e); this.analysis = null; return; }
+    try { // 형성 중인 마지막 봉은 신호에서 제외
+      this.analysis = E.analyze(this.bars, { mode: state.mode });
+      this.analysis.custom = C.analyze(this.bars, this.analysis, { mode: state.mode });
+    } catch (e) { console.error(e); this.analysis = null; return; }
     this.renderView();
   }
 
   currentView() {
     const a = this.analysis;
     if (!a) return null;
+    const cu = a.custom && a.custom[this.view];
+    if (cu) {
+      const d = C.BY_ID[this.view];
+      return { kind: 'custom', id: d.id, name: d.rank + '위 ' + d.name, built: cu.built, trades: cu.trades, open: cu.open, pending: cu.pending, stats: cu.oos, last: cu.last };
+    }
     if (this.view !== 'auto') {
       const row = a.rows.find(r => r.id === this.view);
       if (row) return { kind: 'single', id: row.id, name: row.name, trades: row.trades, open: row.open, pending: row.pending, stats: row.oos };
@@ -796,7 +851,7 @@ class Pane {
     if (!this.analysis || !this.bars.length) return;
     this.clearOverlays();
     const v = this.currentView();
-    const built = this.analysis.prep.built[v.id];
+    const built = v.built || this.analysis.prep.built[v.id];
     this.drawOverlay(built);
     if (!this.el.classList.contains('no-osc')) this.drawOsc(built.osc);
     this.drawMarkers(v);
@@ -811,7 +866,7 @@ class Pane {
       else if (o.type === 'st') {
         this.addLine(false, o.data.line.map((v, i) => o.data.dir[i] === 1 ? v : null), p.buy);
         this.addLine(false, o.data.line.map((v, i) => o.data.dir[i] === -1 ? v : null), p.sell);
-        lg.push(['슈퍼트렌드 10/3', p.buy]);
+        lg.push([o.label || '슈퍼트렌드 10/3', p.buy]);
       } else if (o.type === 'bb') {
         this.addLine(false, o.data.upper, p.violet, { lineWidth: 1 });
         this.addLine(false, o.data.mid, p.accent, { lineWidth: 1, lineStyle: 2 });
@@ -819,11 +874,21 @@ class Pane {
         lg.push(['볼린저 20/2', p.violet]);
       } else if (o.type === 'band') {
         this.addLine(false, o.upper, p.teal, { lineWidth: 1 }); this.addLine(false, o.lower, p.teal, { lineWidth: 1 });
-        lg.push([o.name + ' 20/10', p.teal]);
+        lg.push([o.label || o.name + ' 20/10', p.teal]);
       } else if (o.type === 'dots') {
         this.addLine(false, o.data, p.accent, { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 1.6 });
         lg.push([o.name, p.accent]);
       }
+    }
+    // 자동 추세선 (지지 초록 · 저항 주황), 가격 축 범위에는 영향 없음
+    const bars = this.bars, last = bars.length - 1;
+    this.trends = trendLines(bars);
+    for (const t of this.trends) {
+      const c = t.sup ? p.buy : p.sell;
+      const s = this.main.addLineSeries({ color: c, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null });
+      s.setData([{ time: bars[t.i1].time, value: t.p1 }, { time: bars[last].time, value: t.end }]);
+      this.overlay.push(s);
+      lg.push([t.sup ? '지지 추세선' : '저항 추세선', c]);
     }
     const v = this.currentView();
     this.$.lg3.innerHTML = '<i style="--c:' + p.accent + '">' + esc(v.name) + (v.kind === 'auto' ? ' (자동)' : '') + '</i>' + lg.map(([n, c]) => '<i style="--c:' + c + '">' + esc(n) + '</i>').join('');
@@ -842,6 +907,17 @@ class Pane {
       title = 'MACD 12/26/9';
     } else if (o.type === 'stoch') { guide(80, p.sell); guide(20, p.buy); this.addLine(true, o.data.K, p.accent, { lastValueVisible: true }); this.addLine(true, o.data.D, p.blue, { lineWidth: 1 }); title = '스토캐스틱 14/3/3'; }
     else if (o.type === 'cci') { guide(100, p.sell); guide(-100, p.buy); guide(0); this.addLine(true, o.data, p.accent, { lastValueVisible: true }); title = 'CCI 20'; }
+    else if (o.type === 'score') {
+      const h = this.osc.addHistogramSeries({ priceLineVisible: false, lastValueVisible: true });
+      h.setData(bars.map((b, i) => o.data[i] == null ? { time: b.time } : { time: b.time, value: o.data[i], color: (o.data[i] > 0 ? p.buy : p.sell) + (Math.abs(o.data[i]) === 5 ? '' : '55') }));
+      this.oscS.push(h);
+      title = '추세 합의 점수 (±5 = 5개 일치)';
+    } else if (o.type === 'adx') {
+      guide(15);
+      this.addLine(true, o.data.pdi, p.buy, { lineWidth: 1 }); this.addLine(true, o.data.mdi, p.sell, { lineWidth: 1 });
+      this.addLine(true, o.data.adx, p.accent, { lastValueVisible: true });
+      title = 'ADX 14 · +DI / −DI';
+    }
     this.$.oscHead.innerHTML = '<span>' + title + '</span>';
   }
 
@@ -1064,11 +1140,11 @@ function renderSide() {
   $('sigMain').textContent = mainTxt; $('sigMain').className = 'sig-main ' + cls;
   let why;
   if (v.open) {
-    why = E.STRAT_BY_ID[v.open.src].name + ' 신호로 ' + fmtTime(bars[v.open.idx].time) + ' 진입 · 해당 지표의 반대 신호 또는 손절가 도달 시 청산';
+    why = stratName(v.open.src) + ' 신호로 ' + fmtTime(bars[v.open.idx].time) + ' 진입 · 해당 지표의 반대 신호 또는 손절가 도달 시 청산';
     if (v.kind === 'auto' && v.open.src !== v.id) why += ' · 신규 진입 기준은 ' + v.name;
   } else {
-    const ls = a.lastSignal(v.id);
-    why = (v.kind === 'auto' ? '자동 선택 ' : '수동 선택 ') + v.name + ' · ' + (ls ? '최근 신호: ' + (ls.dir === 1 ? '매수' : '매도') + ' ' + ls.barsAgo + '봉 전 (' + fmtTime(bars[ls.idx].time) + ')' : '최근 신호 없음');
+    const ls = v.kind === 'custom' ? v.last : a.lastSignal(v.id);
+    why = (v.kind === 'auto' ? '자동 선택 ' : v.kind === 'custom' ? '자체 지표 ' : '수동 선택 ') + v.name + ' · ' + (ls ? '최근 신호: ' + (ls.dir === 1 ? '매수' : '매도') + ' ' + ls.barsAgo + '봉 전 (' + fmtTime(bars[ls.idx].time) + ')' : '최근 신호 없음');
   }
   $('sigWhy').textContent = why;
   const lv = pane.levels(v);
@@ -1102,6 +1178,7 @@ function renderSide() {
   }
   const zs = pane.sup;
   kv += '<dt>지지 구간 (파란 박스)</dt><dd>' + (zs ? fmtPx(zs.lo) + ' ~ ' + fmtPx(zs.hi) + '<small>' + fmtPct((zs.line - last.close) / last.close) + ' · 반응 ' + zs.n + '회</small>' : '—') + '</dd>';
+  for (const t of pane.trends) kv += '<dt>' + (t.sup ? '지지 추세선' : '저항 추세선') + '</dt><dd>' + fmtPx(t.end) + '<small>' + fmtPct((t.end - last.close) / last.close) + ' · ' + (t.m > 0 ? '상승' : '하락') + '</small></dd>';
   $('regKv').innerHTML = kv;
 
   // 자동 적용
@@ -1128,6 +1205,15 @@ function renderSide() {
   // 순위
   $('btMeta').textContent = '차트 ' + (pane.idx + 1) + ' · ' + bars.length + '봉 · ' + (state.mode === 'long' ? '롱만' : '롱·숏');
   let rh = '<thead><tr><th>지표</th><th class="num">승률</th><th class="num">PF</th><th class="num">수익</th><th class="num">MDD</th><th class="num">점수</th></tr></thead><tbody>';
+  for (const d of C.LIST) {
+    const s = a.custom[d.id].oos;
+    rh += '<tr data-id="' + d.id + '" class="mine ' + (pane.view === d.id ? 'on' : '') + '" title="' + esc(d.desc + '\n연구 결과(8종목·4개 봉): ' + d.lab) + '">'
+      + '<td><span class="nm">★ ' + d.rank + '위 ' + esc(d.name) + '</span><span class="kind">' + d.kind + '</span></td>'
+      + '<td class="num">' + (s.trades ? Math.round(s.winRate * 100) + '%' : '—') + ' <span class="muted">' + s.trades + '</span></td>'
+      + '<td class="num">' + (s.trades ? s.pf.toFixed(2) : '—') + '</td>'
+      + '<td class="num ' + (s.ret >= 0 ? 'pos' : 'neg') + '">' + fmtPct(s.ret) + '</td>'
+      + '<td class="num">' + fmtPct(-s.mdd, 0) + '</td><td class="num">' + s.score.toFixed(0) + '</td></tr>';
+  }
   rh += '<tr data-id="auto" class="' + (pane.view === 'auto' ? 'on' : '') + '"><td><span class="nm">✦ 자동 (' + (a.method === 'regime' ? '국면 적응' : '단일 최적') + ')</span></td>'
     + '<td class="num">' + Math.round(w.winRate * 100) + '%</td><td class="num">' + w.pf.toFixed(2) + '</td><td class="num ' + (w.ret >= 0 ? 'pos' : 'neg') + '">' + fmtPct(w.ret) + '</td><td class="num">' + fmtPct(-w.mdd, 0) + '</td><td class="num">' + w.score.toFixed(0) + '</td></tr>';
   a.rows.forEach((r, i) => {
@@ -1201,6 +1287,7 @@ function syncSegs() {
   document.querySelectorAll('#quoteSeg button').forEach(b => b.classList.toggle('on', b.dataset.q === state.quote));
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === state.mode));
   document.querySelectorAll('#layoutSeg button').forEach(b => b.classList.toggle('on', +b.dataset.n === state.layout));
+  document.querySelectorAll('#indSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === (p ? p.view : state.ind)));
 }
 
 function applyTheme() {
@@ -1232,13 +1319,20 @@ function bind() {
     buildLayout(n);
   });
   $('themeBtn').onclick = () => { state.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; save(); applyTheme(); };
-  $('autoBtn').onclick = () => { const p = activePane(); if (!p) return; p.view = 'auto'; p.renderView(); renderSide(); };
+  $('autoBtn').onclick = () => { const p = activePane(); if (!p) return; p.view = 'auto'; p.renderView(); syncSegs(); renderSide(); };
   $('rankTbl').onclick = e => {
     const tr = e.target.closest('tr[data-id]'); const p = activePane();
     if (!tr || !p || !p.analysis) return;
     p.view = tr.dataset.id; p.renderView(); renderSide();
-    toast('차트 ' + (p.idx + 1) + ': ' + (p.view === 'auto' ? '자동 지표 적용' : E.STRAT_BY_ID[p.view].name + ' 적용 — 매매 타점을 표시했습니다'), 2200);
+    syncSegs();
+    toast('차트 ' + (p.idx + 1) + ': ' + (p.view === 'auto' ? '자동 지표 적용' : stratName(p.view) + ' 적용 — 매매 타점을 표시했습니다'), 2200);
   };
+  document.querySelectorAll('#indSeg button').forEach(b => b.onclick = () => {
+    state.ind = b.dataset.v; save();
+    panes.forEach(p => { p.view = state.ind; p.renderView(); });
+    syncSegs(); renderSide();
+    toast(state.ind === 'auto' ? '모든 차트: 자동(국면별) 지표' : '모든 차트: 자체 ' + C.BY_ID[state.ind].rank + '위 ' + C.BY_ID[state.ind].name, 2200);
+  });
   $('watchForm').onsubmit = e => {
     e.preventDefault();
     const p = parseSymbol($('watchInput').value);

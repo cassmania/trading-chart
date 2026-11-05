@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="styles.css?v=20261025b"/>
+<link rel="stylesheet" href="styles.css?v=20261106a"/>
 </head>
 <body>
 <header class="top">
@@ -30,6 +30,10 @@
 
   <div class="seg" id="modeSeg" role="group" aria-label="매매 방식" title="롱만: 현물 기준 매수→매도 / 롱·숏: 선물 기준 양방향">
     <button data-m="long">롱만</button><button data-m="both">롱·숏</button>
+  </div>
+
+  <div class="seg" id="indSeg" role="group" aria-label="지표 선택" title="모든 차트에 적용: 자체 지표 1·2·3위(8종목·4개 봉 백테스트 순위) 또는 자동(국면별)">
+    <span class="seg-l">지표</span><button data-v="c1">1위</button><button data-v="c2">2위</button><button data-v="c3">3위</button><button data-v="auto">자동</button>
   </div>
 
   <div class="seg" id="layoutSeg" role="group" aria-label="차트 분할" title="차트 분할 개수">
@@ -72,7 +76,7 @@
 
     <section class="card">
       <div class="card-head"><h2>지표 백테스트 순위</h2><span class="muted small" id="btMeta"></span></div>
-      <p class="muted small">행을 누르면 해당 지표와 매매 타점을 차트에 적용합니다. 순위는 검증 구간(최근 60%) 점수 기준입니다.</p>
+      <p class="muted small">행을 누르면 해당 지표와 매매 타점을 이 차트에만 적용합니다. ★ 자체 1~3위는 8종목·4개 봉 연구 순위(고정)이고, 표의 수치는 이 차트의 검증 구간(최근 60%) 성과입니다.</p>
       <div class="tbl-wrap"><table class="tbl rank" id="rankTbl"></table></div>
     </section>
 
@@ -82,14 +86,15 @@
       <ul class="watch" id="watchList"></ul>
     </section>
 
-    <p class="disclaimer">백테스트는 과거 데이터에 대한 결과이며 미래 수익을 보장하지 않습니다. 수수료 0.1%·손절 2.5×ATR·다음 봉 시가 체결 기준으로 계산합니다. 투자 판단의 책임은 본인에게 있습니다.</p>
+    <p class="disclaimer">백테스트는 과거 데이터에 대한 결과이며 미래 수익을 보장하지 않습니다. 수수료 0.1%·손절 2.5×ATR·다음 봉 시가 체결 기준으로 계산합니다. 자체 지표는 추세 추종형이라 승률은 30%대이고 이길 때 크게 이기는 구조이며, 15분봉에서는 수수료 때문에 연구 구간 전부 손실이었습니다. 투자 판단의 책임은 본인에게 있습니다.</p>
   </aside>
 </main>
 
 <div class="toast hidden" id="toast" role="status"></div>
 
 <script src="vendor/lightweight-charts.js"></script>
-<script src="engine.js?v=20261025b"></script>
-<script src="app.js?v=20261025b"></script>
+<script src="engine.js?v=20261106a"></script>
+<script src="custom.js?v=20261106a"></script>
+<script src="app.js?v=20261106a"></script>
 </body>
 </html>
