@@ -952,7 +952,8 @@ class Pane {
     }
     if (v.kind === 'auto' && !this.dense && bars[this.analysis.adaptive.from]) ms.push({ time: bars[this.analysis.adaptive.from].time, position: 'aboveBar', shape: 'square', color: p.gray, text: '검증 시작' });
     ms.sort((a, b) => a.time - b.time);
-    this.candle.setMarkers(ms);
+    // 글자는 trade-marks.js가 캔들·다른 글자를 피해 빈 자리에 놓고 선으로 잇는다
+    if (window.TradeMarks) TradeMarks.applyTradeMarks(this.candle, ms, bars); else this.candle.setMarkers(ms);
   }
 
   levels(v) {
