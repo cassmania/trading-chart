@@ -1219,6 +1219,8 @@ function renderSide() {
   $('pcName').textContent = pane.sym + ' / ' + state.quote + ' · ' + TF[pane.tf].label;
   $('pcSrc').textContent = pane.source ? pane.source.exch + ' 실시간' : '';
   const a = pane.analysis, bars = pane.bars;
+  // 검증된 신호 요약(방향 점수·실행 규칙·신뢰도) — signal-judge.js, 숫자는 indicator-audit.js
+  if (window.SignalJudge) SignalJudge.render($('judge'), bars, { symbol: pane.sym, tf: TF[pane.tf].binance, tfLabel: TF[pane.tf].label.replace(/봉$/, '') + '봉', extra: [['2위 터틀 · 3위 슈퍼트렌드', '11-06 검증 통과'], ['자동(국면별 지표)', '무작위 수준']] });
   if (!a) {
     $('sigMain').textContent = bars.length ? '데이터 부족 (봉 120개 미만)' : '불러오는 중…';
     $('sigMain').className = 'sig-main'; $('sigWhy').textContent = ''; $('sigLevels').innerHTML = '';
